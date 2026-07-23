@@ -1,0 +1,1 @@
+"use client";import{track}from"@/lib/analytics";export function FAQ({items}:{items:[string,string][]}){return <div className="faq-list">{items.map(([q,a])=><details key={q} onToggle={e=>{if(e.currentTarget.open)track("faq_opened",{question_id:q.toLowerCase().replaceAll(" ","_")})}}><summary>{q}<span>+</span></summary><p>{a}</p></details>)}</div>}
