@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { getLeadStorage, mapLeadToRow, developmentLeadStorage } from "@/lib/lead-storage";
+import { getLeadStorage, mapLeadToRow, developmentLeadStorage, leadSaveErrorCode } from "@/lib/lead-storage";
+import { applicationErrorMessage } from "@/lib/application-errors";
 import type { Lead } from "@/lib/lead-schema";
 import { filterAnalyticsProperties } from "@/lib/analytics";
 
@@ -28,5 +29,9 @@ describe("production pilot funnel", () => {
   });
   it("removes payment and identity fields from conversion payloads", () => {
     expect(filterAnalyticsProperties({product:"textback",stripe_customer_id:"cus_1",payment_intent:"pi_1",email:"a@b.se"})).toEqual({product:"textback"});
+  });
+  it("maps unique submission conflicts to a stable user message", () => {
+    expect(leadSaveErrorCode({code:"23505"})).toBe("DUPLICATE_SUBMISSION");
+    expect(applicationErrorMessage(new Error("DUPLICATE_SUBMISSION"))).toBe("Ansökan har redan tagits emot.");
   });
 });

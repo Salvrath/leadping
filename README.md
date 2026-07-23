@@ -23,6 +23,13 @@ Utan Supabase används en minnesadapter **endast** i `development`/`test`. Produ
 
 Migrationen skapar statusconstraints, unik `submission_id`, Stripe-referenser och webhook-ledger för idempotens.
 
+Kör migrationerna i ordning:
+
+1. `supabase/migrations/20260723_create_textback_pilot_funnel.sql`
+2. `supabase/migrations/20260723_harden_stripe_webhook_claim.sql`
+
+Den andra migrationen skapar en service-role-only RPC som atomiskt claimar nya eller tidigare felade Stripe-event. Det förhindrar parallell behandling av samma retry.
+
 ## 2. Stripe Checkout och webhook
 
 1. Skapa en produkt i Stripe Dashboard och en Price för pilotmånaden. Konfigurera belopp, valuta och tax behavior i Stripe – de hårdkodas inte i koden.
@@ -73,5 +80,7 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+GitHub Actions kör samma kontroller med Node.js 20 vid pull requests mot `main` och push till `main`. CI använder mocks/testmiljö och kräver inga riktiga Supabase-, Stripe- eller Resend-hemligheter.
 
 Juridiska sidor är utkast. Ersätt `[FÖRETAGSNAMN]`, `[ORGANISATIONSNUMMER]`, `[ADRESS]` och `[KONTAKTMEJL]`, stäm av landningssidans pris mot Stripe Price och genomför juridisk granskning före offentlig lansering.

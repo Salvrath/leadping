@@ -4,6 +4,7 @@ import { leadSchema, type Lead } from "@/lib/lead-schema";
 import { getLeadStorage } from "@/lib/lead-storage";
 import { notifier, notifySafely } from "@/lib/server/notifications";
 import { createPilotCheckout } from "@/lib/server/stripe";
+import { applicationErrorMessage } from "@/lib/application-errors";
 
 export type FormState = { success: boolean; errors?: Record<string, string[]>; message?: string; id?: string; values?: Partial<Lead> };
 
@@ -21,9 +22,8 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
     await notifySafely(() => notifier.application(parsed.data, saved.id), "application");
     return { success: true, id: saved.id };
   } catch (error) {
-    if (error instanceof Error && error.message.includes("duplicate")) return { success: false, message: "Ansökan har redan tagits emot." };
     console.error("[pilot] application failed", { code: error instanceof Error ? error.message : "UNKNOWN" });
-    return { success: false, message: "Ansökan kunde inte sparas just nu. Försök igen eller kontakta oss.", values: safeValues };
+    return { success: false, message: applicationErrorMessage(error), values: safeValues };
   }
 }
 

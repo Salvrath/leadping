@@ -22,10 +22,15 @@ export function mapLeadToRow(lead: Lead) {
   };
 }
 
+export function leadSaveErrorCode(error: { code?: string } | null) {
+  return error?.code === "23505" ? "DUPLICATE_SUBMISSION" : "LEAD_SAVE_FAILED";
+}
+
 export const supabaseLeadStorage: LeadStorage = {
   async save(lead) {
     const { data, error } = await getSupabaseAdmin().from("pilot_leads").insert(mapLeadToRow(lead)).select("id,email,company").single();
-    if (error || !data) throw new Error("LEAD_SAVE_FAILED");
+    if (error) throw new Error(leadSaveErrorCode(error));
+    if (!data) throw new Error("LEAD_SAVE_FAILED");
     return data as StoredLead;
   },
   async find(id) {

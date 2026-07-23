@@ -1,7 +1,7 @@
 # Textback – checklista inför pilotlansering
 
 ## Infrastruktur och betalning
-- [ ] Supabase-migrationen `20260723_create_textback_pilot_funnel.sql` är körd.
+- [ ] Supabase-migrationerna `20260723_create_textback_pilot_funnel.sql` och `20260723_harden_stripe_webhook_claim.sql` är körda i ordning.
 - [ ] RLS är verifierad på båda tabellerna och inga anon/authenticated-policyer finns.
 - [ ] Stripe test mode är testat från ansökan till verifierad webhook.
 - [ ] Stripe live-produkt och live Price är skapade med korrekt skatt, valuta och belopp.
