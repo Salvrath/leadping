@@ -1,0 +1,4 @@
+import type{Metadata}from"next";import"./globals.css";import{CookieBanner}from"@/components/cookie-banner";import{PageTracker}from"@/components/page-tracker";import{GoogleTagManager}from"@/components/gtm";
+const title="Textback för bilverkstäder | Fånga kunder efter missade samtal";const description="Textback skickar automatiskt SMS när bilverkstaden missar ett samtal, så att kunden kan berätta vad den behöver hjälp med innan den ringer vidare.";
+export const metadata:Metadata={metadataBase:new URL(process.env.NEXT_PUBLIC_SITE_URL||"http://localhost:3000"),title,description,alternates:{canonical:"/"},openGraph:{title,description,type:"website",locale:"sv_SE",siteName:"Textback från Leadping"},robots:{index:true,follow:true}};
+export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="sv"><body><a className="skip" href="#main">Hoppa till innehållet</a>{children}<CookieBanner/><PageTracker/><GoogleTagManager/></body></html>}
