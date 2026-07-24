@@ -6,7 +6,7 @@ import type { LeadStorage } from "../lead-storage";
 let stripe: Stripe | undefined;
 export function getStripe() {
   if (!process.env.STRIPE_SECRET_KEY) throw new Error("PAYMENTS_NOT_CONFIGURED");
-  return stripe ??= new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" });
+  return stripe ??= new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-03-31.basil" });
 }
 
 export async function getPilotPriceDisplay() {
