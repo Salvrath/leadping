@@ -11,4 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm ci --silent
-      - run: npm run typecheck
+      - name: Capture typecheck diagnostics
+        run: npm run typecheck > typecheck.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.txt
+      - name: Fail when diagnostics exist
+        run: test ! -s typecheck.txt
