@@ -15,11 +15,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --silent
-      - name: Typecheck
+      - name: Capture typecheck diagnostics
         shell: bash
-        run: |
-          set +e
-          npm run typecheck > /tmp/typecheck.log 2>&1
-          code=$?
-          tail -n 40 /tmp/typecheck.log
-          exit $code
+        run: npm run typecheck > typecheck.txt 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.txt
+      - name: Fail when diagnostics exist
+        run: test ! -s typecheck.txt
