@@ -1,21 +1,26 @@
 name: CI
+
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+
 permissions:
   contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci --silent
-      - name: Capture typecheck diagnostics
-        run: npm run typecheck > typecheck.txt 2>&1 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-node@v4
         with:
-          name: typecheck-diagnostics
-          path: typecheck.txt
-      - name: Fail when diagnostics exist
-        run: test ! -s typecheck.txt
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
