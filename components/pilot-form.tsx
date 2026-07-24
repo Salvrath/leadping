@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { submitPilot, startCheckout, type FormState } from "@/app/actions";
+import { submitPilot, type FormState } from "@/app/actions";
 import { track } from "@/lib/analytics";
 import { CheckCircle2 } from "lucide-react";
 
@@ -10,12 +10,7 @@ const attributionNames = ["utm_source", "utm_medium", "utm_campaign", "utm_conte
 
 function SubmitButton({ ready }: { ready: boolean }) {
   const { pending } = useFormStatus();
-  return <button className="button large" disabled={pending || !ready} aria-disabled={pending || !ready}>{pending ? "Skickar…" : "Skicka pilotansökan"}</button>;
-}
-
-function CheckoutButton() {
-  const { pending } = useFormStatus();
-  return <button className="button" disabled={pending}>{pending ? "Öppnar säker betalning…" : "Betala pilotmånad"}</button>;
+  return <button className="button large" disabled={pending || !ready} aria-disabled={pending || !ready}>{pending ? "Skickar…" : "Skicka kostnadsfri pilotansökan"}</button>;
 }
 
 export function PilotForm() {
@@ -44,11 +39,9 @@ export function PilotForm() {
   if (state.success && state.id) return <div className="success-card" role="status" aria-live="polite" tabIndex={-1} ref={statusRef}>
     <CheckCircle2 size={42}/><span className="eyebrow">Ansökan mottagen</span>
     <h2>Tack! Nästa steg är kompatibilitetskontroll.</h2>
-    <p>Ansökan är sparad. Ni kan betala pilotmånaden nu, men betalningen innebär inte att kompatibiliteten är godkänd. Leadping kontrollerar er telefonilösning och kontaktar er.</p>
-    <form action={startCheckout} onSubmit={() => { track("checkout_clicked"); track("pilot_checkout_started", { product: "textback" }); }}>
-      <input type="hidden" name="leadId" value={state.id}/><CheckoutButton/>
-    </form>
-    <p className="fine">Betalningen sker i Stripe Checkout. Textback hanterar inga kortuppgifter på denna sida. Om tjänsten inte kan aktiveras hanteras återbetalning enligt pilotvillkoren.</p>
+    <p>Ansökan är sparad och kostar ingenting. Leadping kontrollerar nu om Textback kan fungera med er nuvarande operatör och telefonilösning.</p>
+    <p>Om lösningen är kompatibel kontaktar vi er med upplägg, slutligt pris och betalningslänk innan installation eller aktivering.</p>
+    <p className="fine">Ingen betalning görs och inget avtal börjar gälla genom att skicka pilotansökan.</p>
   </div>;
 
   function begin() { if (!started) { setStarted(true); track("pilot_form_started"); } }
@@ -67,7 +60,7 @@ export function PilotForm() {
     </div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check>
     <Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{ color: "#64748b" }}>Vi använder uppgifterna för pilotansökan – aldrig som kortuppgifter eller i analytics.</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{ color: "#64748b" }}>Ansökan är kostnadsfri. Vi använder uppgifterna för kompatibilitetskontroll och kontakt om pilotupplägget.</p>
   </form>;
 }
 
