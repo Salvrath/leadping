@@ -15,31 +15,18 @@ export const metadata: Metadata = {
   description,
   applicationName: "Textback",
   category: "business",
-  keywords: [
-    "automatiskt SMS vid missat samtal",
-    "missat samtal SMS",
-    "SMS efter missat samtal",
-    "missade samtal företag",
-    "automatisk kunduppföljning",
-  ],
+  keywords: ["automatiskt SMS vid missat samtal","missat samtal SMS","SMS efter missat samtal","missade samtal företag","automatisk kunduppföljning"],
   alternates: { canonical: "/" },
-  openGraph: {
-    title,
-    description,
-    type: "website",
-    locale: "sv_SE",
-    siteName,
-    url: "/",
-  },
-  twitter: { card: "summary_large_image", title, description },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
-  },
+  icons: { icon: "/icon.svg" },
+  manifest: "/manifest.webmanifest",
+  openGraph: { title, description, type: "website", locale: "sv_SE", siteName, url: "/", images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Textback – Missa samtalet, inte kunden" }] },
+  twitter: { card: "summary_large_image", title, description, images: ["/opengraph-image"] },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 } },
   verification: googleVerification ? { google: googleVerification } : undefined,
 };
 
+const organization = {"@context":"https://schema.org","@type":"Organization",name:"Textback",url:siteUrl,logo:`${siteUrl}/textback-logo.svg`,description:"Textback hjälper företag att följa upp missade samtal med automatiska SMS."};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="sv"><body><a className="skip" href="#main">Hoppa till innehållet</a>{children}<CookieBanner/><PageTracker/><GoogleTagManager/></body></html>;
+  return <html lang="sv"><body><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(organization)}}/><a className="skip" href="#main">Hoppa till innehållet</a>{children}<CookieBanner/><PageTracker/><GoogleTagManager/></body></html>;
 }
