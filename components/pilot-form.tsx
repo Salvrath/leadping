@@ -52,7 +52,7 @@ export function PilotForm() {
   </div>;
 
   function begin() { if (!started) { setStarted(true); track("pilot_form_started"); } }
-  return <form action={action} className="pilot-form" onFocus={begin} noValidate>
+  return <form action={action} className="pilot-form" style={{ color: "var(--navy)" }} onFocus={begin} noValidate>
     <div ref={statusRef} tabIndex={-1} role="alert" aria-live="assertive" className={state.message || state.errors ? "form-alert" : "sr-only"}>
       {state.message || (state.errors ? "Kontrollera de markerade fälten och försök igen." : "")}
     </div>
@@ -67,7 +67,7 @@ export function PilotForm() {
     </div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check>
     <Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine">Vi använder uppgifterna för pilotansökan – aldrig som kortuppgifter eller i analytics.</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{ color: "#64748b" }}>Vi använder uppgifterna för pilotansökan – aldrig som kortuppgifter eller i analytics.</p>
   </form>;
 }
 
