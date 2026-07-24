@@ -5,16 +5,16 @@ import type { Lead } from "@/lib/lead-schema";
 import { filterAnalyticsProperties } from "@/lib/analytics";
 
 const lead: Lead = {
-  company:"Verkstaden",contact:"Kim",email:"kim@example.se",phone:"0700000000",workshopPhone:"080000000",
-  telephony:"Telia",missedCalls:12,employees:4,privacy:true,authority:true,message:"Hej",
+  company:"Serviceföretaget",contact:"Kim",email:"kim@example.se",phone:"0700000000",businessPhone:"080000000",
+  phoneNumbers:3,telephony:"Telia",industry:"Hantverk",missedCalls:12,privacy:true,authority:true,message:"Hej",
   submissionId:"00000000-0000-4000-8000-000000000001",formStartedAt:1,website:"",
   utmSource:"google",utmMedium:undefined,utmCampaign:undefined,utmContent:undefined,utmTerm:undefined,landingPath:"/?utm_source=google"
 };
 
-describe("production pilot funnel", () => {
+describe("production Textback funnel", () => {
   it("maps validated lead fields to database columns", () => {
     const row = mapLeadToRow(lead);
-    expect(row).toMatchObject({company:"Verkstaden",contact_name:"Kim",missed_calls_per_week:12,submission_id:lead.submissionId,utm_source:"google"});
+    expect(row).toMatchObject({company:"Serviceföretaget",contact_name:"Kim",missed_calls_per_week:12,phone_numbers:3,industry:"Hantverk",submission_id:lead.submissionId,utm_source:"google"});
     expect(row).not.toHaveProperty("privacy");
   });
   it("never silently falls back to development storage in production", () => {
