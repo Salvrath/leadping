@@ -13,7 +13,7 @@ type FieldDefinition = readonly [FieldName, string, "text" | "email" | "tel" | "
 
 function SubmitButton({ ready }: { ready: boolean }) {
   const { pending } = useFormStatus();
-  return <button className="button large" disabled={pending || !ready}>{pending ? "Skickar…" : "Kontrollera kompatibilitet"}</button>;
+  return <button className="button large" disabled={pending || !ready}>{pending ? "Skickar…" : "Kontrollera min telefoni"}</button>;
 }
 
 export function PilotForm() {
@@ -42,7 +42,7 @@ export function PilotForm() {
     if (state.success || state.message || state.errors) statusRef.current?.focus();
   }, [state]);
 
-  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Uppgifterna är mottagna</span><h2>Vi kontrollerar er telefonilösning.</h2><p>Vi återkommer normalt inom en arbetsdag med besked om kompatibilitet, pris för ert antal telefonnummer och nästa steg. Ingen betalning sker innan ni har bekräftat beställningen.</p></div>;
+  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Uppgifterna är mottagna</span><h2>Vi kontrollerar er telefonilösning.</h2><p>Vi återkommer normalt inom en arbetsdag med besked om kompatibilitet och nästa steg. Ingen betalning sker innan ni har bekräftat beställningen.</p></div>;
 
   function begin() {
     if (!started) {
