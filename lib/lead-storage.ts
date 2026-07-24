@@ -12,13 +12,28 @@ export interface LeadStorage {
 export function mapLeadToRow(lead: Lead) {
   const acceptedAt = new Date().toISOString();
   return {
-    company: lead.company, org_number: lead.orgNumber || null, contact_name: lead.contact,
-    email: lead.email, phone: lead.phone, workshop_phone: lead.workshopPhone,
-    telephony: lead.telephony, missed_calls_per_week: lead.missedCalls, employees: lead.employees,
-    message: lead.message || null, privacy_accepted_at: acceptedAt, authority_confirmed_at: acceptedAt,
-    submission_id: lead.submissionId, utm_source: lead.utmSource || null, utm_medium: lead.utmMedium || null,
-    utm_campaign: lead.utmCampaign || null, utm_content: lead.utmContent || null, utm_term: lead.utmTerm || null,
-    landing_path: lead.landingPath || null, referrer: lead.referrer || null,
+    company: lead.company,
+    org_number: null,
+    contact_name: lead.contact,
+    email: lead.email,
+    phone: lead.phone,
+    workshop_phone: lead.businessPhone,
+    telephony: lead.telephony,
+    missed_calls_per_week: lead.missedCalls ?? 0,
+    employees: 1,
+    phone_numbers: lead.phoneNumbers,
+    industry: lead.industry || null,
+    message: lead.message || null,
+    privacy_accepted_at: acceptedAt,
+    authority_confirmed_at: acceptedAt,
+    submission_id: lead.submissionId,
+    utm_source: lead.utmSource || null,
+    utm_medium: lead.utmMedium || null,
+    utm_campaign: lead.utmCampaign || null,
+    utm_content: lead.utmContent || null,
+    utm_term: lead.utmTerm || null,
+    landing_path: lead.landingPath || null,
+    referrer: lead.referrer || null,
   };
 }
 
@@ -28,13 +43,21 @@ export function leadSaveErrorCode(error: { code?: string } | null) {
 
 export const supabaseLeadStorage: LeadStorage = {
   async save(lead) {
-    const { data, error } = await getSupabaseAdmin().from("pilot_leads").insert(mapLeadToRow(lead)).select("id,email,company").single();
+    const { data, error } = await getSupabaseAdmin()
+      .from("pilot_leads")
+      .insert(mapLeadToRow(lead))
+      .select("id,email,company")
+      .single();
     if (error) throw new Error(leadSaveErrorCode(error));
     if (!data) throw new Error("LEAD_SAVE_FAILED");
     return data as StoredLead;
   },
   async find(id) {
-    const { data, error } = await getSupabaseAdmin().from("pilot_leads").select("id,email,company").eq("id", id).maybeSingle();
+    const { data, error } = await getSupabaseAdmin()
+      .from("pilot_leads")
+      .select("id,email,company")
+      .eq("id", id)
+      .maybeSingle();
     if (error) throw new Error("LEAD_LOOKUP_FAILED");
     return data as StoredLead | null;
   },
@@ -46,7 +69,12 @@ export const supabaseLeadStorage: LeadStorage = {
 
 const memory = new Map<string, StoredLead>();
 export const developmentLeadStorage: LeadStorage = {
-  async save(lead) { const row = { id: crypto.randomUUID(), email: lead.email, company: lead.company }; memory.set(row.id, row); console.info("[pilot] application stored", { id: row.id }); return row; },
+  async save(lead) {
+    const row = { id: crypto.randomUUID(), email: lead.email, company: lead.company };
+    memory.set(row.id, row);
+    console.info("[textback] enquiry stored", { id: row.id });
+    return row;
+  },
   async find(id) { return memory.get(id) || null; },
   async update() {},
 };
