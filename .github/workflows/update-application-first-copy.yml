@@ -1,0 +1,51 @@
+name: Update application-first copy
+on:
+  push:
+    branches: [fix-application-before-payment]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update-copy:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-application-before-payment
+      - name: Update copy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          page = Path('app/page.tsx')
+          text = page.read_text()
+          replacements = {
+            'Pilotavgiften återbetalas om tjänsten inte kan aktiveras enligt pilotens villkor.': 'Ansökan är kostnadsfri. Efter kompatibilitetskontrollen får godkända pilotverkstäder information om pris och betalning före aktivering.',
+            'Ingen bindningstid. Pilotavgiften återbetalas om tjänsten inte kan aktiveras med er telefonilösning.': 'Ansökan är kostnadsfri. Betalning sker först efter att telefonilösningen har kontrollerats och pilotupplägget har godkänts.',
+            'Betalning innebär inte godkänd kompatibilitet. Pilotavgiften återbetalas enligt pilotvillkoren om tjänsten inte kan aktiveras med er telefonilösning. Fortsatt pris bekräftas före aktivering.': 'Ansökan är kostnadsfri. Vi kontrollerar telefonilösningen först. Godkända pilotverkstäder får slutligt pris och betalningslänk före installation och aktivering.',
+            'Pilotavgiften återbetalas om tjänsten inte kan aktiveras enligt erbjudandet.': 'Ingen betalning tas innan kompatibiliteten har kontrollerats och pilotupplägget har godkänts.',
+          }
+          for old, new in replacements.items():
+            if old not in text:
+              raise SystemExit(f'Missing expected text in app/page.tsx: {old}')
+            text = text.replace(old, new)
+          page.write_text(text)
+
+          cancel = Path('app/pilot/avbruten/page.tsx')
+          cancel_text = cancel.read_text()
+          old = '<p>Har du frågor? Kontakta <a className="text-link" href="mailto:[KONTAKTMEJL]">[KONTAKTMEJL]</a>.</p><a className="button secondary" href="/">Tillbaka till Textback</a>'
+          new = '<p>Gå tillbaka till Textback och skicka en ny ansökan om du behöver hjälp.</p><a className="button secondary" href="/">Tillbaka till Textback</a>'
+          if old not in cancel_text:
+            raise SystemExit('Missing expected contact placeholder in cancel page')
+          cancel.write_text(cancel_text.replace(old, new))
+
+          Path('.github/workflows/update-application-first-copy.yml').unlink()
+          PY
+      - name: Commit updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/pilot/avbruten/page.tsx .github/workflows/update-application-first-copy.yml
+          git commit -m "Align pilot copy with compatibility-first flow"
+          git push origin HEAD:fix-application-before-payment
