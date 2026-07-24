@@ -9,6 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${siteUrl}/missade-samtal-hantverkare`, lastModified, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/missade-samtal-bilverkstad`, lastModified, changeFrequency: "monthly", priority: 0.8 },
     { url: `${siteUrl}/missade-samtal-stad-och-flyttfirma`, lastModified, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${siteUrl}/press`, lastModified, changeFrequency: "yearly", priority: 0.5 },
     { url: `${siteUrl}/integritet`, lastModified, changeFrequency: "yearly", priority: 0.2 },
     { url: `${siteUrl}/villkor`, lastModified, changeFrequency: "yearly", priority: 0.2 },
     { url: `${siteUrl}/pilotvillkor`, lastModified, changeFrequency: "yearly", priority: 0.2 },
