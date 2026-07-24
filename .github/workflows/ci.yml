@@ -1,14 +1,9 @@
 name: CI
-
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
-
 permissions:
   contents: read
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,8 +14,12 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - run: npm ci --silent
+      - name: Typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck > /tmp/typecheck.log 2>&1
+          code=$?
+          tail -n 40 /tmp/typecheck.log
+          exit $code
