@@ -12,9 +12,11 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
   const raw = Object.fromEntries(data);
   const candidate = { ...raw, privacy: raw.privacy === "on", authority: raw.authority === "on" };
   const parsed = leadSchema.safeParse(candidate);
-  const safeValues = { company: String(raw.company || ""), orgNumber: String(raw.orgNumber || ""), contact: String(raw.contact || ""),
-    email: String(raw.email || ""), phone: String(raw.phone || ""), workshopPhone: String(raw.workshopPhone || ""),
-    telephony: String(raw.telephony || ""), message: String(raw.message || "") };
+  const safeValues = {
+    company: String(raw.company || ""), contact: String(raw.contact || ""), email: String(raw.email || ""),
+    phone: String(raw.phone || ""), businessPhone: String(raw.businessPhone || ""), phoneNumbers: Number(raw.phoneNumbers || 1),
+    telephony: String(raw.telephony || ""), industry: String(raw.industry || ""), missedCalls: Number(raw.missedCalls || 0), message: String(raw.message || ""),
+  };
   if (!parsed.success) return { success: false, errors: parsed.error.flatten().fieldErrors, values: safeValues };
   if (Date.now() - parsed.data.formStartedAt < 1500) return { success: false, message: "Formuläret skickades för snabbt. Vänta ett ögonblick och försök igen.", values: safeValues };
   try {
@@ -22,7 +24,7 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
     await notifySafely(() => notifier.application(parsed.data, saved.id), "application");
     return { success: true, id: saved.id };
   } catch (error) {
-    console.error("[pilot] application failed", { code: error instanceof Error ? error.message : "UNKNOWN" });
+    console.error("[textback] enquiry failed", { code: error instanceof Error ? error.message : "UNKNOWN" });
     return { success: false, message: applicationErrorMessage(error), values: safeValues };
   }
 }
