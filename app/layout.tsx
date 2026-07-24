@@ -7,6 +7,7 @@ import { siteName, siteUrl } from "@/lib/site";
 
 const title = "Automatiskt SMS vid missat samtal | Textback";
 const description = "Textback skickar automatiskt SMS när ditt företag missar ett samtal. Fånga kundens ärende direkt, samla svar i en leadinkorg och följ upp i tid.";
+const googleVerification = process.env.GOOGLE_SITE_VERIFICATION;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -36,6 +37,7 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
   },
+  verification: googleVerification ? { google: googleVerification } : undefined,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
