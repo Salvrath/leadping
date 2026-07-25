@@ -1,70 +1,16 @@
 "use server";
-
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { clearAdminSession, createAdminSession, requireAdmin, verifyAdminPassword } from "@/lib/server/admin-auth";
 import { parseCompanyForm } from "@/lib/server/admin-company";
+import { hashCustomerPassword } from "@/lib/server/customer-auth";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { z } from "zod";
-
-const uuid = z.string().uuid();
-
-export async function loginAdmin(formData: FormData) {
-  const password = String(formData.get("password") || "");
-  if (!verifyAdminPassword(password)) redirect("/admin/login?error=1");
-  createAdminSession();
-  redirect("/admin");
-}
-
-export async function logoutAdmin() {
-  clearAdminSession();
-  redirect("/admin/login");
-}
-
-export async function updateConversationStatus(formData: FormData) {
-  requireAdmin();
-  const id = uuid.parse(String(formData.get("id") || ""));
-  const status = String(formData.get("status") || "");
-  if (!["new", "open", "contacted", "closed", "blocked"].includes(status)) throw new Error("INVALID_CONVERSATION_UPDATE");
-  const { data, error } = await getSupabaseAdmin().from("conversations").update({ status, updated_at: new Date().toISOString() }).eq("id", id).select("id").maybeSingle();
-  if (error || !data) throw new Error("CONVERSATION_UPDATE_FAILED");
-  revalidatePath("/admin");
-  revalidatePath(`/admin/conversations/${id}`);
-}
-
-export async function setTextbackNumberActive(formData: FormData) {
-  requireAdmin();
-  const id = uuid.parse(String(formData.get("id") || ""));
-  const active = String(formData.get("active")) === "true";
-  const { data, error } = await getSupabaseAdmin().from("textback_numbers").update({ active, updated_at: new Date().toISOString() }).eq("id", id).select("id").maybeSingle();
-  if (error || !data) throw new Error("NUMBER_UPDATE_FAILED");
-  revalidatePath("/admin");
-  revalidatePath(`/admin/companies/${id}`);
-}
-
-export async function createCompany(formData: FormData) {
-  requireAdmin();
-  const values = parseCompanyForm(formData);
-  const db = getSupabaseAdmin();
-  const { data: existing, error: lookupError } = await db.from("textback_numbers").select("id").eq("provider", values.provider).eq("provider_number", values.provider_number).maybeSingle();
-  if (lookupError) throw new Error("COMPANY_LOOKUP_FAILED");
-  if (existing) throw new Error("TEXTBACK_NUMBER_ALREADY_EXISTS");
-  const { data, error } = await db.from("textback_numbers").insert(values).select("id").single();
-  if (error || !data) throw new Error("COMPANY_CREATE_FAILED");
-  revalidatePath("/admin");
-  redirect(`/admin/companies/${data.id}`);
-}
-
-export async function updateCompany(formData: FormData) {
-  requireAdmin();
-  const id = uuid.parse(String(formData.get("id") || ""));
-  const values = parseCompanyForm(formData);
-  const db = getSupabaseAdmin();
-  const { data: conflict, error: lookupError } = await db.from("textback_numbers").select("id").eq("provider", values.provider).eq("provider_number", values.provider_number).neq("id", id).maybeSingle();
-  if (lookupError) throw new Error("COMPANY_LOOKUP_FAILED");
-  if (conflict) throw new Error("TEXTBACK_NUMBER_ALREADY_EXISTS");
-  const { data, error } = await db.from("textback_numbers").update(values).eq("id", id).select("id").maybeSingle();
-  if (error || !data) throw new Error("COMPANY_UPDATE_FAILED");
-  revalidatePath("/admin");
-  revalidatePath(`/admin/companies/${id}`);
-}
+const uuid=z.string().uuid();
+export async function loginAdmin(f:FormData){const p=String(f.get("password")||"");if(!verifyAdminPassword(p))redirect("/admin/login?error=1");createAdminSession();redirect("/admin");}
+export async function logoutAdmin(){clearAdminSession();redirect("/admin/login");}
+export async function updateConversationStatus(f:FormData){requireAdmin();const id=uuid.parse(String(f.get("id")||"")),status=String(f.get("status")||"");if(!["new","open","contacted","closed","blocked"].includes(status))throw new Error("INVALID_CONVERSATION_UPDATE");const{data,error}=await getSupabaseAdmin().from("conversations").update({status,updated_at:new Date().toISOString()}).eq("id",id).select("id").maybeSingle();if(error||!data)throw new Error("CONVERSATION_UPDATE_FAILED");revalidatePath("/admin");revalidatePath(`/admin/conversations/${id}`);}
+export async function setTextbackNumberActive(f:FormData){requireAdmin();const id=uuid.parse(String(f.get("id")||"")),active=String(f.get("active"))==="true";const{data,error}=await getSupabaseAdmin().from("textback_numbers").update({active,updated_at:new Date().toISOString()}).eq("id",id).select("id").maybeSingle();if(error||!data)throw new Error("NUMBER_UPDATE_FAILED");revalidatePath("/admin");revalidatePath(`/admin/companies/${id}`);}
+export async function createCompany(f:FormData){requireAdmin();const v=parseCompanyForm(f),db=getSupabaseAdmin();const{data:e,error:l}=await db.from("textback_numbers").select("id").eq("provider",v.provider).eq("provider_number",v.provider_number).maybeSingle();if(l)throw new Error("COMPANY_LOOKUP_FAILED");if(e)throw new Error("TEXTBACK_NUMBER_ALREADY_EXISTS");const{data,error}=await db.from("textback_numbers").insert(v).select("id").single();if(error||!data)throw new Error("COMPANY_CREATE_FAILED");revalidatePath("/admin");redirect(`/admin/companies/${data.id}`);}
+export async function updateCompany(f:FormData){requireAdmin();const id=uuid.parse(String(f.get("id")||"")),v=parseCompanyForm(f),db=getSupabaseAdmin();const{data:c,error:l}=await db.from("textback_numbers").select("id").eq("provider",v.provider).eq("provider_number",v.provider_number).neq("id",id).maybeSingle();if(l)throw new Error("COMPANY_LOOKUP_FAILED");if(c)throw new Error("TEXTBACK_NUMBER_ALREADY_EXISTS");const{data,error}=await db.from("textback_numbers").update(v).eq("id",id).select("id").maybeSingle();if(error||!data)throw new Error("COMPANY_UPDATE_FAILED");revalidatePath("/admin");revalidatePath(`/admin/companies/${id}`);}
+export async function saveCustomerAccess(f:FormData){requireAdmin();const numberId=uuid.parse(String(f.get("textback_number_id")||""));const email=z.string().email().parse(String(f.get("email")||"").trim().toLowerCase());const password=String(f.get("password")||"");const active=String(f.get("active"))!=="false";const db=getSupabaseAdmin();const values:any={textback_number_id:numberId,email,active,updated_at:new Date().toISOString()};if(password)values.password_hash=hashCustomerPassword(password);const{data:existing}=await db.from("customer_users").select("id,password_hash").eq("textback_number_id",numberId).maybeSingle();if(!existing&&!password)throw new Error("PASSWORD_REQUIRED");const result=existing?await db.from("customer_users").update(values).eq("id",existing.id):await db.from("customer_users").insert(values);if(result.error)throw new Error("CUSTOMER_ACCESS_SAVE_FAILED");revalidatePath("/admin/customers");redirect("/admin/customers");}
