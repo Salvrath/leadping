@@ -23,6 +23,7 @@ export function PilotForm() {
   const [submissionId, setSubmissionId] = useState("");
   const [formStartedAt, setFormStartedAt] = useState(0);
   const statusRef = useRef<HTMLDivElement>(null);
+  const trackedLeadRef = useRef<string | null>(null);
 
   useEffect(() => {
     setSubmissionId(crypto.randomUUID());
@@ -38,7 +39,10 @@ export function PilotForm() {
   }, []);
 
   useEffect(() => {
-    if (state.success) track("launch_enquiry_submitted");
+    if (state.success && state.id && trackedLeadRef.current !== state.id) {
+      trackedLeadRef.current = state.id;
+      track("launch_enquiry_submitted", { lead_id: state.id });
+    }
     if (state.success || state.message || state.errors) statusRef.current?.focus();
   }, [state]);
 
