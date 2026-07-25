@@ -18,8 +18,13 @@ export type TextbackNumber = {
   active: boolean;
 };
 
+export type SmsMode = "log" | "dryrun" | "live";
+
 export type SmsResult = {
-  mode: "log" | "live";
+  mode: SmsMode;
   providerId?: string;
   status: "logged" | "created";
+  providerStatus?: string;
+  parts?: number;
+  cost?: number;
 };

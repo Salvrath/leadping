@@ -5,19 +5,26 @@ import { sendElksSms } from "./elks";
 import type { IncomingCall, TextbackNumber } from "./types";
 
 const DEFAULT_TEMPLATE = "Hej! Vi kunde inte svara just nu. Beskriv gärna vad du behöver hjälp med, så återkommer vi så snart vi kan. / {{businessName}}";
+const MAX_SMS_ATTEMPTS = 3;
+const RETRY_DELAYS_MINUTES = [1, 5, 30] as const;
 
 function dedupeMinutes(): number {
   const value = Number(process.env.TEXTBACK_DEDUPE_MINUTES || 60);
   return Number.isFinite(value) && value >= 1 && value <= 1440 ? Math.floor(value) : 60;
 }
 
-function renderMessage(template: string, businessName: string): string {
+export function renderMessage(template: string, businessName: string): string {
   return (template || DEFAULT_TEMPLATE).replaceAll("{{businessName}}", businessName).trim().slice(0, 1000);
 }
 
+function retryAt(attempt: number): string | null {
+  if (attempt >= MAX_SMS_ATTEMPTS) return null;
+  const minutes = RETRY_DELAYS_MINUTES[Math.min(attempt - 1, RETRY_DELAYS_MINUTES.length - 1)];
+  return new Date(Date.now() + minutes * 60_000).toISOString();
+}
+
 async function createIgnoredEvent(call: IncomingCall, reason: string, textbackNumberId?: string) {
-  const supabase = getSupabaseAdmin();
-  await supabase.from("missed_call_events").upsert({
+  await getSupabaseAdmin().from("missed_call_events").upsert({
     provider: call.provider,
     provider_call_id: call.providerCallId,
     textback_number_id: textbackNumberId || null,
@@ -27,6 +34,63 @@ async function createIgnoredEvent(call: IncomingCall, reason: string, textbackNu
     reason,
     raw_event: call.raw,
   }, { onConflict: "provider,provider_call_id", ignoreDuplicates: true });
+}
+
+async function deliverEvent(eventId: string, config: TextbackNumber, callerNumber: string, currentAttempts = 0) {
+  const supabase = getSupabaseAdmin();
+  const attempt = currentAttempts + 1;
+  await supabase.from("missed_call_events").update({
+    status: "sms_processing",
+    sms_attempts: attempt,
+    last_attempt_at: new Date().toISOString(),
+    next_attempt_at: null,
+    reason: null,
+  }).eq("id", eventId);
+
+  const sender = normalizePhoneNumber(config.sms_sender || config.provider_number) || config.sms_sender || "Textback";
+  try {
+    const sms = await sendElksSms({
+      from: sender,
+      to: callerNumber,
+      message: renderMessage(config.sms_template, config.business_name),
+      eventId,
+    });
+    await supabase.from("missed_call_events").update({
+      status: sms.mode === "log" ? "sms_logged" : sms.mode === "dryrun" ? "sms_logged" : "sms_sent",
+      sms_provider_id: sms.providerId || null,
+      provider_status: sms.providerStatus || null,
+      sms_parts: sms.parts ?? null,
+      sms_cost: sms.cost ?? null,
+      sms_sent_at: new Date().toISOString(),
+      next_attempt_at: null,
+    }).eq("id", eventId);
+    return { status: sms.mode === "live" ? "sms_sent" as const : "sms_logged" as const, eventId };
+  } catch (error) {
+    const code = error instanceof Error ? error.message.slice(0, 200) : "unknown_sms_error";
+    const nextAttemptAt = retryAt(attempt);
+    await supabase.from("missed_call_events").update({
+      status: nextAttemptAt ? "sms_retry_pending" : "sms_dead_letter",
+      reason: code,
+      next_attempt_at: nextAttemptAt,
+    }).eq("id", eventId);
+    return { status: nextAttemptAt ? "sms_retry_pending" as const : "sms_dead_letter" as const, eventId, reason: code };
+  }
+}
+
+export async function retryMissedCallEvent(eventId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("missed_call_events")
+    .select("id,status,sms_attempts,caller_number,textback_numbers(id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active)")
+    .eq("id", eventId)
+    .eq("status", "sms_retry_pending")
+    .lte("next_attempt_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw new Error("SMS_RETRY_LOOKUP_FAILED");
+  if (!data || !data.caller_number || !data.textback_numbers) return { status: "not_retryable" as const };
+  const config = Array.isArray(data.textback_numbers) ? data.textback_numbers[0] : data.textback_numbers;
+  if (!config?.active) return { status: "not_retryable" as const };
+  return deliverEvent(data.id, config as TextbackNumber, data.caller_number, data.sms_attempts || 0);
 }
 
 export async function processMissedCall(call: IncomingCall) {
@@ -59,11 +123,16 @@ export async function processMissedCall(call: IncomingCall) {
 
   const { data: existing } = await supabase
     .from("missed_call_events")
-    .select("id,status,sms_provider_id")
+    .select("id,status,sms_attempts,next_attempt_at")
     .eq("provider", call.provider)
     .eq("provider_call_id", call.providerCallId)
     .maybeSingle();
-  if (existing) return { status: "duplicate_event" as const, eventId: existing.id };
+  if (existing) {
+    if (existing.status === "sms_retry_pending" && existing.next_attempt_at && new Date(existing.next_attempt_at) <= new Date()) {
+      return deliverEvent(existing.id, config, call.callerNumber, existing.sms_attempts || 0);
+    }
+    return { status: "duplicate_event" as const, eventId: existing.id };
+  }
 
   const since = new Date(Date.now() - dedupeMinutes() * 60_000).toISOString();
   const { data: recent, error: recentError } = await supabase
@@ -71,7 +140,7 @@ export async function processMissedCall(call: IncomingCall) {
     .select("id")
     .eq("textback_number_id", config.id)
     .eq("caller_number", call.callerNumber)
-    .in("status", ["sms_queued", "sms_sent", "sms_delivered"])
+    .in("status", ["sms_processing", "sms_logged", "sms_sent", "sms_delivered"])
     .gte("created_at", since)
     .limit(1);
   if (recentError) throw new Error("DEDUPE_LOOKUP_FAILED");
@@ -87,28 +156,10 @@ export async function processMissedCall(call: IncomingCall) {
     reason: recent?.length ? "caller_recently_contacted" : null,
     raw_event: call.raw,
   }).select("id").single();
-  if (insertError || !event) throw new Error("MISSED_CALL_EVENT_CREATE_FAILED");
-  if (recent?.length) return { status: "deduplicated" as const, eventId: event.id };
-
-  const sender = normalizePhoneNumber(config.sms_sender || config.provider_number) || config.sms_sender || "Textback";
-  try {
-    const sms = await sendElksSms({
-      from: sender,
-      to: call.callerNumber,
-      message: renderMessage(config.sms_template, config.business_name),
-      eventId: event.id,
-    });
-    await supabase.from("missed_call_events").update({
-      status: sms.mode === "log" ? "sms_logged" : "sms_sent",
-      sms_provider_id: sms.providerId || null,
-      sms_sent_at: new Date().toISOString(),
-    }).eq("id", event.id);
-    return { status: sms.mode === "log" ? "sms_logged" as const : "sms_sent" as const, eventId: event.id };
-  } catch (error) {
-    await supabase.from("missed_call_events").update({
-      status: "sms_failed",
-      reason: error instanceof Error ? error.message.slice(0, 200) : "unknown_sms_error",
-    }).eq("id", event.id);
-    throw error;
+  if (insertError || !event) {
+    if ((insertError as { code?: string } | null)?.code === "23505") return { status: "duplicate_event" as const };
+    throw new Error("MISSED_CALL_EVENT_CREATE_FAILED");
   }
+  if (recent?.length) return { status: "deduplicated" as const, eventId: event.id };
+  return deliverEvent(event.id, config, call.callerNumber);
 }
