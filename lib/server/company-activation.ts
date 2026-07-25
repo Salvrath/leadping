@@ -1,5 +1,6 @@
 import "server-only";
 
+// Production activation is intentionally gated by every real-world verification below.
 export const activationStepFields = [
   "provider_configured_at",
   "forwarding_verified_at",
