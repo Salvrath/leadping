@@ -74,17 +74,26 @@ export async function createPilotCheckoutWithStripe(
   const id = z.string().uuid().parse(leadId);
   const lead = await storage.find(id);
   if (!lead) throw new Error("LEAD_NOT_FOUND");
-  const standardPrice = config.standardPrice || config.price;
-  const launchCoupon = config.launchCoupon;
-  if (!standardPrice || !launchCoupon) throw new Error("PAYMENTS_NOT_CONFIGURED");
   const origin = safeSiteOrigin(config.site);
 
-  const params = {
+  const legacyMode = Boolean(config.price && !config.standardPrice && !config.launchCoupon);
+  const standardPrice = config.standardPrice || config.price;
+  if (!standardPrice || (!legacyMode && !config.launchCoupon)) throw new Error("PAYMENTS_NOT_CONFIGURED");
+
+  const params = legacyMode ? {
+    mode: "payment",
+    customer_email: lead.email,
+    line_items: [{ price: standardPrice, quantity: 1 }],
+    metadata: { pilot_lead_id: id },
+    payment_intent_data: { metadata: { pilot_lead_id: id } },
+    success_url: `${origin}/pilot/tack?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/pilot/avbruten?lead_id=${id}`,
+  } : {
     mode: "subscription",
     customer_email: lead.email,
     client_reference_id: id,
     line_items: [{ price: standardPrice, quantity: 1 }],
-    discounts: [{ coupon: launchCoupon }],
+    discounts: [{ coupon: config.launchCoupon! }],
     allow_promotion_codes: false,
     billing_address_collection: "required",
     tax_id_collection: { enabled: true },
@@ -95,9 +104,11 @@ export async function createPilotCheckoutWithStripe(
     custom_text: { submit: { message: "495 kr/mån i tre månader. Därefter 995 kr/mån. Ingen bindningstid. Priser exklusive moms." } },
     success_url: `${origin}/pilot/tack?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/pilot/avbruten?lead_id=${id}`,
-  } as unknown as Stripe.Checkout.SessionCreateParams;
+  };
 
-  const session = await stripeClient.checkout.sessions.create(params, { idempotencyKey: `textback-subscription-checkout-${id}` });
+  const session = await stripeClient.checkout.sessions.create(params as unknown as Stripe.Checkout.SessionCreateParams, {
+    idempotencyKey: legacyMode ? `textback-pilot-${id}` : `textback-subscription-checkout-${id}`,
+  });
   if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
   await storage.update(id, { status: "checkout_started", payment_status: "checkout_created", stripe_checkout_session_id: session.id });
   return session.url;
