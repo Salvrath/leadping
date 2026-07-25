@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { clearAdminSession, createAdminSession, requireAdmin, verifyAdminPassword } from "@/lib/server/admin-auth";
 import { parseCompanyForm } from "@/lib/server/admin-company";
-import { activationReadiness, activationStepFields, assertActivationStep } from "@/lib/server/company-activation";
+import { activationReadiness, assertActivationStep } from "@/lib/server/company-activation";
 import { hashCustomerPassword } from "@/lib/server/customer-auth";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { z } from "zod";
@@ -40,7 +40,8 @@ export async function setTextbackNumberActive(formData: FormData) {
   const active = String(formData.get("active")) === "true";
   const db = getSupabaseAdmin();
   const { data: company, error: readError } = await db.from("textback_numbers")
-    .select(`id,${activationStepFields.join(",")}`).eq("id", id).maybeSingle();
+    .select("id,provider_configured_at,forwarding_verified_at,caller_id_verified_at,inbound_sms_verified_at,outbound_sms_verified_at,portal_account_verified_at")
+    .eq("id", id).maybeSingle();
   if (readError || !company) throw new Error("NUMBER_LOOKUP_FAILED");
   if (active && !activationReadiness(company).ready) throw new Error("ACTIVATION_REQUIREMENTS_INCOMPLETE");
   const now = new Date().toISOString();
