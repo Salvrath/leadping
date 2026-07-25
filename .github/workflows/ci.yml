@@ -24,3 +24,22 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Start production server
+        run: |
+          NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3000 \
+          ELKS_WEBHOOK_SECRET=ci-webhook-secret \
+          HEALTHCHECK_SECRET=ci-health-secret \
+          npm start > /tmp/textback-server.log 2>&1 &
+          echo $! > /tmp/textback-server.pid
+      - name: Wait for server
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/textback-server.log
+          exit 1
+      - run: npm run smoke
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/textback-server.log || true
