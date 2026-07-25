@@ -19,13 +19,13 @@ export type SubscriptionPricing = {
   launchAmount: number;
   currency: string;
   introMonths: number;
-  taxBehavior: Stripe.Price.TaxBehavior | null;
+  taxBehavior: string | null;
 };
 
 function safeSiteOrigin(site?: string) {
   if (!site) throw new Error("PAYMENTS_NOT_CONFIGURED");
   const url = new URL(site);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error("PAYMENTS_NOT_CONFIGURED");
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("PAYMENTS_NOT_CONFIGURED");
   return url.origin;
 }
 
@@ -45,11 +45,11 @@ export async function validateSubscriptionPricing(client = getStripe()): Promise
   if (coupon.duration !== "repeating" || coupon.duration_in_months !== INTRO_MONTHS) throw new Error("INVALID_LAUNCH_COUPON");
 
   return {
-    standardAmount: price.unit_amount,
-    launchAmount: price.unit_amount - coupon.amount_off,
-    currency: price.currency,
+    standardAmount: EXPECTED_STANDARD_AMOUNT,
+    launchAmount: EXPECTED_STANDARD_AMOUNT - EXPECTED_DISCOUNT_AMOUNT,
+    currency: EXPECTED_CURRENCY,
     introMonths: INTRO_MONTHS,
-    taxBehavior: price.tax_behavior,
+    taxBehavior: price.tax_behavior ?? null,
   };
 }
 
@@ -90,7 +90,7 @@ export async function createPilotCheckoutWithStripe(
   if (!standardPrice || !launchCoupon) throw new Error("PAYMENTS_NOT_CONFIGURED");
   const origin = safeSiteOrigin(config.site);
 
-  const session = await stripeClient.checkout.sessions.create({
+  const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     customer_email: lead.email,
     client_reference_id: id,
@@ -100,7 +100,6 @@ export async function createPilotCheckoutWithStripe(
     billing_address_collection: "required",
     tax_id_collection: { enabled: true },
     automatic_tax: { enabled: true },
-    customer_update: { address: "auto", name: "auto" },
     metadata: { pilot_lead_id: id },
     subscription_data: {
       metadata: { pilot_lead_id: id },
@@ -112,7 +111,11 @@ export async function createPilotCheckoutWithStripe(
     },
     success_url: `${origin}/pilot/tack?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/pilot/avbruten?lead_id=${id}`,
-  }, { idempotencyKey: `textback-subscription-checkout-${id}` });
+  };
+
+  const session = await stripeClient.checkout.sessions.create(params, {
+    idempotencyKey: `textback-subscription-checkout-${id}`,
+  });
 
   if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
   await storage.update(id, {
