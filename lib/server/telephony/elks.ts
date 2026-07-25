@@ -2,7 +2,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { siteUrl } from "@/lib/site";
 import { normalizePhoneNumber } from "./number";
-import type { IncomingCall, SmsMode, SmsResult } from "./types";
+import type { IncomingCall, IncomingSms, SmsMode, SmsResult } from "./types";
 
 const ELKS_SMS_ENDPOINT = "https://api.46elks.com/a1/sms";
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -21,16 +21,18 @@ export function verifyElksWebhook(request: Request): boolean {
   return secureEqual(supplied, expected);
 }
 
-export async function parseElksIncomingCall(request: Request): Promise<IncomingCall> {
+async function parseElksPayload(request: Request): Promise<Record<string, string>> {
   const contentType = request.headers.get("content-type") || "";
-  let raw: Record<string, string>;
   if (contentType.includes("application/json")) {
     const json = await request.json() as Record<string, unknown>;
-    raw = Object.fromEntries(Object.entries(json).map(([key, value]) => [key, String(value ?? "").slice(0, 500)]));
-  } else {
-    const form = await request.formData();
-    raw = Object.fromEntries(Array.from(form.entries()).map(([key, value]) => [key, String(value).slice(0, 500)]));
+    return Object.fromEntries(Object.entries(json).map(([key, value]) => [key, String(value ?? "").slice(0, 4000)]));
   }
+  const form = await request.formData();
+  return Object.fromEntries(Array.from(form.entries()).map(([key, value]) => [key, String(value).slice(0, 4000)]));
+}
+
+export async function parseElksIncomingCall(request: Request): Promise<IncomingCall> {
+  const raw = await parseElksPayload(request);
   if (raw.direction && raw.direction !== "incoming") throw new Error("INVALID_CALL_DIRECTION");
   const providerCallId = raw.callid || raw.id;
   if (!providerCallId || providerCallId.length > 200) throw new Error("INVALID_CALL_ID");
@@ -39,6 +41,23 @@ export async function parseElksIncomingCall(request: Request): Promise<IncomingC
     providerCallId,
     callerNumber: normalizePhoneNumber(raw.from),
     destinationNumber: normalizePhoneNumber(raw.to),
+    createdAt: raw.created || undefined,
+    raw,
+  };
+}
+
+export async function parseElksIncomingSms(request: Request): Promise<IncomingSms> {
+  const raw = await parseElksPayload(request);
+  const providerMessageId = raw.id || raw.smsid;
+  if (!providerMessageId || providerMessageId.length > 200) throw new Error("INVALID_SMS_ID");
+  const message = String(raw.message || "").trim();
+  if (!message || message.length > 4000) throw new Error("INVALID_SMS_MESSAGE");
+  return {
+    provider: "46elks",
+    providerMessageId,
+    senderNumber: normalizePhoneNumber(raw.from),
+    destinationNumber: normalizePhoneNumber(raw.to),
+    message,
     createdAt: raw.created || undefined,
     raw,
   };
