@@ -63,16 +63,19 @@ export async function createPilotCheckout(leadId: string, storage: LeadStorage) 
 }
 
 type CheckoutClient = Pick<Stripe, "checkout">;
+type CheckoutConfig = { standardPrice?: string; launchCoupon?: string; site?: string; price?: string };
+
 export async function createPilotCheckoutWithStripe(
   leadId: string,
   storage: LeadStorage,
   stripeClient: CheckoutClient,
-  config: { standardPrice?: string; launchCoupon?: string; site?: string },
+  config: CheckoutConfig,
 ) {
   const id = z.string().uuid().parse(leadId);
   const lead = await storage.find(id);
   if (!lead) throw new Error("LEAD_NOT_FOUND");
-  const { standardPrice, launchCoupon } = config;
+  const standardPrice = config.standardPrice || config.price;
+  const launchCoupon = config.launchCoupon;
   if (!standardPrice || !launchCoupon) throw new Error("PAYMENTS_NOT_CONFIGURED");
   const origin = safeSiteOrigin(config.site);
 
