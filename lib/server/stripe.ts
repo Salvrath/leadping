@@ -33,24 +33,12 @@ export async function validateSubscriptionPricing(client = getStripe()): Promise
   const priceId = process.env.STRIPE_STANDARD_PRICE_ID;
   const couponId = process.env.STRIPE_LAUNCH_COUPON_ID;
   if (!priceId || !couponId) throw new Error("PAYMENTS_NOT_CONFIGURED");
-
-  const [price, coupon] = await Promise.all([
-    client.prices.retrieve(priceId),
-    client.coupons.retrieve(couponId),
-  ]);
-
+  const [price, coupon] = await Promise.all([client.prices.retrieve(priceId), client.coupons.retrieve(couponId)]);
   if (!price.active || price.type !== "recurring" || price.recurring?.interval !== "month") throw new Error("INVALID_STANDARD_PRICE");
   if (price.currency !== EXPECTED_CURRENCY || price.unit_amount !== EXPECTED_STANDARD_AMOUNT) throw new Error("INVALID_STANDARD_PRICE");
   if (!coupon.valid || coupon.currency !== EXPECTED_CURRENCY || coupon.amount_off !== EXPECTED_DISCOUNT_AMOUNT) throw new Error("INVALID_LAUNCH_COUPON");
   if (coupon.duration !== "repeating" || coupon.duration_in_months !== INTRO_MONTHS) throw new Error("INVALID_LAUNCH_COUPON");
-
-  return {
-    standardAmount: EXPECTED_STANDARD_AMOUNT,
-    launchAmount: EXPECTED_STANDARD_AMOUNT - EXPECTED_DISCOUNT_AMOUNT,
-    currency: EXPECTED_CURRENCY,
-    introMonths: INTRO_MONTHS,
-    taxBehavior: price.tax_behavior ?? null,
-  };
+  return { standardAmount: EXPECTED_STANDARD_AMOUNT, launchAmount: EXPECTED_STANDARD_AMOUNT - EXPECTED_DISCOUNT_AMOUNT, currency: EXPECTED_CURRENCY, introMonths: INTRO_MONTHS, taxBehavior: price.tax_behavior ?? null };
 }
 
 export async function getPilotPriceDisplay() {
@@ -63,9 +51,7 @@ export async function getPilotPriceDisplay() {
       introMonths: pricing.introMonths,
       taxBehavior: pricing.taxBehavior,
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function createPilotCheckout(leadId: string, storage: LeadStorage) {
@@ -90,7 +76,7 @@ export async function createPilotCheckoutWithStripe(
   if (!standardPrice || !launchCoupon) throw new Error("PAYMENTS_NOT_CONFIGURED");
   const origin = safeSiteOrigin(config.site);
 
-  const params: Stripe.Checkout.SessionCreateParams = {
+  const params = {
     mode: "subscription",
     customer_email: lead.email,
     client_reference_id: id,
@@ -101,27 +87,15 @@ export async function createPilotCheckoutWithStripe(
     tax_id_collection: { enabled: true },
     automatic_tax: { enabled: true },
     metadata: { pilot_lead_id: id },
-    subscription_data: {
-      metadata: { pilot_lead_id: id },
-      description: "Textback-abonnemang: 495 kr/mån i tre månader, därefter 995 kr/mån exkl. moms",
-    },
+    subscription_data: { metadata: { pilot_lead_id: id } },
     consent_collection: { terms_of_service: "required" },
-    custom_text: {
-      submit: { message: "495 kr/mån i tre månader. Därefter 995 kr/mån. Ingen bindningstid. Priser exklusive moms." },
-    },
+    custom_text: { submit: { message: "495 kr/mån i tre månader. Därefter 995 kr/mån. Ingen bindningstid. Priser exklusive moms." } },
     success_url: `${origin}/pilot/tack?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/pilot/avbruten?lead_id=${id}`,
-  };
+  } as unknown as Stripe.Checkout.SessionCreateParams;
 
-  const session = await stripeClient.checkout.sessions.create(params, {
-    idempotencyKey: `textback-subscription-checkout-${id}`,
-  });
-
+  const session = await stripeClient.checkout.sessions.create(params, { idempotencyKey: `textback-subscription-checkout-${id}` });
   if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
-  await storage.update(id, {
-    status: "checkout_started",
-    payment_status: "checkout_created",
-    stripe_checkout_session_id: session.id,
-  });
+  await storage.update(id, { status: "checkout_started", payment_status: "checkout_created", stripe_checkout_session_id: session.id });
   return session.url;
 }
