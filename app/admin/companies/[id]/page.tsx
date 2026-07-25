@@ -20,6 +20,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
     .eq("id", params.id).maybeSingle();
   if (error || !company) notFound();
   const readiness = activationReadiness(company);
+  const activationBlocked = !company.active && !readiness.ready;
 
   return <main style={{minHeight:"100vh",background:"#f4f7fb",color:"#10213f",padding:"32px 16px"}}>
     <div style={{maxWidth:900,margin:"0 auto",display:"grid",gap:20}}>
@@ -68,7 +69,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
 
         <div style={{marginTop:22,paddingTop:20,borderTop:"1px solid #e2e8f0",display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <div><strong>{company.active?"Tjänsten är live":"Tjänsten är pausad"}</strong><div style={{fontSize:13,color:"#64748b",marginTop:3}}>{company.activated_at?`Aktiverad ${fmt(company.activated_at)}`:"Ingen produktionsaktivering genomförd"}</div></div>
-          <form action={setTextbackNumberActive}><input type="hidden" name="id" value={company.id}/><input type="hidden" name="active" value={String(!company.active)}/><button disabled={!company.active&&!readiness.ready} style={{border:0,background:company.active?"#991b1b":"#166534",color:"white",borderRadius:10,padding:"11px 15px",fontWeight:800,cursor:!company.active&&!readiness.ready?"not-allowed":"pointer",opacity:!company.active&&!readiness.ready?.45:1}}>{company.active?"Pausa tjänsten":"Aktivera i produktion"}</button></form>
+          <form action={setTextbackNumberActive}><input type="hidden" name="id" value={company.id}/><input type="hidden" name="active" value={String(!company.active)}/><button disabled={activationBlocked} style={{border:0,background:company.active?"#991b1b":"#166534",color:"white",borderRadius:10,padding:"11px 15px",fontWeight:800,cursor:activationBlocked?"not-allowed":"pointer",opacity:activationBlocked?0.45:1}}>{company.active?"Pausa tjänsten":"Aktivera i produktion"}</button></form>
         </div>
       </section>
     </div>
