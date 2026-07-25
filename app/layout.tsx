@@ -3,6 +3,7 @@ import "./globals.css";
 import { CookieBanner } from "@/components/cookie-banner";
 import { PageTracker } from "@/components/page-tracker";
 import { GoogleTagManager } from "@/components/gtm";
+import { GoogleAdsConversion } from "@/components/google-ads-conversion";
 import { siteName, siteUrl } from "@/lib/site";
 
 const title = "Automatiskt SMS vid missat samtal | Textback";
@@ -28,5 +29,5 @@ export const metadata: Metadata = {
 const organization = {"@context":"https://schema.org","@type":"Organization",name:"Textback",url:siteUrl,logo:`${siteUrl}/textback-logo.svg`,description:"Textback hjälper företag att följa upp missade samtal med automatiska SMS."};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="sv"><body><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(organization)}}/><a className="skip" href="#main">Hoppa till innehållet</a>{children}<CookieBanner/><PageTracker/><GoogleTagManager/></body></html>;
+  return <html lang="sv"><body><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(organization)}}/><a className="skip" href="#main">Hoppa till innehållet</a>{children}<CookieBanner/><PageTracker/><GoogleTagManager/><GoogleAdsConversion/></body></html>;
 }
