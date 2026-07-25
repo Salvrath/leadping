@@ -9,7 +9,7 @@ const conversionLabel = process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL;
 
 declare global {
   interface Window {
-    dataLayer?: unknown[];
+    dataLayer?: Record<string, unknown>[];
     gtag?: (...args: unknown[]) => void;
   }
 }
