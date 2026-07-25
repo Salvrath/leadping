@@ -9,7 +9,7 @@ export function Nav() {
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
       <nav className="shell flex h-18 items-center justify-between" aria-label="Huvudmeny">
         <a href="#top" aria-label="Textback startsida" className="flex items-center">
-          <img src="/textback-logo.svg" width="180" height="45" alt="Textback" />
+          <img src="/textback-logo.svg" width="160" height="40" alt="Textback" className="block h-10 w-auto max-w-[160px] object-contain" />
         </a>
         <button className="md:hidden" aria-expanded={open} aria-label="Öppna meny" onClick={() => setOpen(!open)}>{open ? <X/> : <Menu/>}</button>
         <div className={`${open ? "flex" : "hidden"} absolute left-0 top-18 w-full flex-col gap-4 border-b bg-white p-6 md:static md:flex md:w-auto md:flex-row md:items-center md:border-0 md:p-0`}>
