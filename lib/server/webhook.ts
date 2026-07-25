@@ -33,39 +33,71 @@ async function updateLead(db: Db, id: string, values: Record<string, unknown>) {
   if (!data) throw new Error("WEBHOOK_LEAD_NOT_FOUND");
 }
 
+async function findLeadIdByCustomer(db: Db, customerId: string) {
+  const { data, error } = await db.from("pilot_leads").select("id")
+    .eq("stripe_customer_id", customerId).maybeSingle();
+  if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
+  return data?.id as string | undefined;
+}
+
+function subscriptionValues(subscription: Stripe.Subscription) {
+  const currentPeriodEnd = subscription.items.data.reduce((latest, item) => Math.max(latest, item.current_period_end), 0);
+  return {
+    stripe_subscription_id: subscription.id,
+    subscription_status: subscription.status,
+    cancel_at_period_end: subscription.cancel_at_period_end,
+    current_period_end: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null,
+    canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
+  };
+}
+
 export async function processStripeEvent(event: Stripe.Event, db: Db = getSupabaseAdmin()) {
   if (!await claimEvent(db, event)) return { duplicate: true };
   try {
-    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
+    if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       const id = leadId(session.metadata?.pilot_lead_id);
-      const paid = event.type === "checkout.session.async_payment_succeeded" || session.payment_status === "paid";
-      if (paid) {
-        const paidAt = new Date().toISOString();
-        await updateLead(db, id, { status: "pilot_paid", payment_status: "paid", paid_at: paidAt,
-          stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
-          stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null });
-        const { data, error } = await db.from("pilot_leads").select("company").eq("id", id).maybeSingle();
-        if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
-        if (data?.company) await notifySafely(() => notifier.payment(data.company, id, paidAt), "payment");
-      }
-    } else if (event.type === "checkout.session.async_payment_failed") {
-      const session = event.data.object as Stripe.Checkout.Session;
-      await updateLead(db, leadId(session.metadata?.pilot_lead_id), { payment_status: "failed" });
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id || null;
+      const paidAt = new Date().toISOString();
+      await updateLead(db, id, {
+        status: "subscription_active",
+        payment_status: session.payment_status,
+        paid_at: session.payment_status === "paid" || session.payment_status === "no_payment_required" ? paidAt : null,
+        stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id || null,
+        stripe_subscription_id: subscriptionId,
+        subscription_status: "active",
+      });
+      const { data, error } = await db.from("pilot_leads").select("company").eq("id", id).maybeSingle();
+      if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
+      if (data?.company) await notifySafely(() => notifier.payment(data.company, id, paidAt), "payment");
+    } else if (["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
+      const subscription = event.data.object as Stripe.Subscription;
+      const metadataId = subscription.metadata?.pilot_lead_id;
+      const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      const id = metadataId ? leadId(metadataId) : leadId(await findLeadIdByCustomer(db, customerId));
+      const values = subscriptionValues(subscription);
+      await updateLead(db, id, {
+        ...values,
+        status: subscription.status === "active" || subscription.status === "trialing" ? "subscription_active" : subscription.status === "canceled" ? "subscription_canceled" : "subscription_attention",
+        payment_status: subscription.status,
+      });
+    } else if (["invoice.paid", "invoice.payment_failed"].includes(event.type)) {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+      if (!customerId) throw new Error("WEBHOOK_CUSTOMER_MISSING");
+      const id = leadId(await findLeadIdByCustomer(db, customerId));
+      await updateLead(db, id, {
+        payment_status: event.type === "invoice.paid" ? "paid" : "failed",
+        last_invoice_status: invoice.status,
+        last_invoice_id: invoice.id,
+        last_invoice_at: new Date().toISOString(),
+        status: event.type === "invoice.paid" ? "subscription_active" : "subscription_attention",
+      });
     } else if (event.type === "checkout.session.expired") {
       const session = event.data.object as Stripe.Checkout.Session;
       await updateLead(db, leadId(session.metadata?.pilot_lead_id), { payment_status: "expired" });
-    } else if (event.type === "charge.refunded") {
-      const charge = event.data.object as Stripe.Charge;
-      let id = charge.metadata?.pilot_lead_id;
-      if (!id && charge.payment_intent) {
-        const paymentIntent = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent.id;
-        const { data, error } = await db.from("pilot_leads").select("id").eq("stripe_payment_intent_id", paymentIntent).maybeSingle();
-        if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
-        id = data?.id;
-      }
-      await updateLead(db, leadId(id), { payment_status: "refunded", refunded_at: new Date().toISOString() });
     }
+
     await updateWebhookLedger(db, event.id, { processed_at: new Date().toISOString(), processing_error: null });
     return { duplicate: false };
   } catch (error) {
