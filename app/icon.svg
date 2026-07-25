@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#fff"/><path d="M60 16c-25 0-44 19-44 43 0 12 4 22 12 30l-7 20 22-8c5 2 11 3 17 3 25 0 44-19 44-45 0-5-1-10-3-14" fill="none" stroke="#10213f" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><path d="M42 40c4 14 15 25 29 29l9-9 16 10c-3 11-12 18-23 16-25-5-45-25-50-50-2-11 5-20 16-23l10 16-7 11z" fill="#10213f"/><path d="M78 34h24M83 49h25" fill="none" stroke="#1976d2" stroke-width="8" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Textback</title>
+  <desc id="desc">Textback-ikon med telefon och meddelandebubbla</desc>
+  <rect width="128" height="128" rx="28" fill="#ffffff"/>
+  <circle cx="60" cy="68" r="42" fill="#123486"/>
+  <path d="M42 45c4 15 16 27 31 31l9-9 16 10c-3 11-12 18-23 16-26-5-47-26-52-52-2-11 5-20 16-23l10 16-7 11z" fill="#ffffff"/>
+  <path d="M78 22h25c9 0 16 7 16 16v6c0 9-7 16-16 16H91l-12 10 2-12c-7-3-11-9-11-16v-4c0-9 7-16 16-16z" fill="#2bb6c4"/>
+  <circle cx="87" cy="41" r="3" fill="#123486"/>
+  <circle cx="95" cy="41" r="3" fill="#123486"/>
+  <circle cx="103" cy="41" r="3" fill="#123486"/>
+</svg>
