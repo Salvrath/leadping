@@ -37,6 +37,11 @@ async function findLeadIdByCustomer(db: Db, customerId: string) {
   if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
   return data?.id as string | undefined;
 }
+async function notifyPayment(db: Db, id: string, paidAt: string) {
+  const { data, error } = await db.from("pilot_leads").select("company").eq("id", id).maybeSingle();
+  if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
+  if (data?.company) await notifySafely(() => notifier.payment(data.company, id, paidAt), "payment");
+}
 function unixDate(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? new Date(value * 1000).toISOString() : null;
 }
@@ -58,21 +63,27 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
   if (!await claimEvent(db, event)) return { duplicate: true };
   try {
     const object = event.data.object as unknown as StripeObject;
-    if (event.type === "checkout.session.completed") {
+    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
       const id = leadId(metadataValue(object, "pilot_lead_id"));
       const paymentStatus = String(object.payment_status || "unknown");
+      const isSubscription = String(object.mode || "") === "subscription" || Boolean(object.subscription);
+      const paid = event.type === "checkout.session.async_payment_succeeded" || ["paid", "no_payment_required"].includes(paymentStatus);
       const paidAt = new Date().toISOString();
-      await updateLead(db, id, {
+      await updateLead(db, id, isSubscription ? {
         status: "subscription_active",
         payment_status: paymentStatus,
-        paid_at: ["paid", "no_payment_required"].includes(paymentStatus) ? paidAt : null,
+        paid_at: paid ? paidAt : null,
         stripe_customer_id: stringId(object.customer) || null,
         stripe_subscription_id: stringId(object.subscription) || null,
         subscription_status: "active",
+      } : {
+        status: paid ? "pilot_paid" : "checkout_started",
+        payment_status: paid ? "paid" : paymentStatus,
+        paid_at: paid ? paidAt : null,
+        stripe_customer_id: stringId(object.customer) || null,
+        stripe_payment_intent_id: stringId(object.payment_intent) || null,
       });
-      const { data, error } = await db.from("pilot_leads").select("company").eq("id", id).maybeSingle();
-      if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
-      if (data?.company) await notifySafely(() => notifier.payment(data.company, id, paidAt), "payment");
+      if (paid) await notifyPayment(db, id, paidAt);
     } else if (["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
       const metadataId = metadataValue(object, "pilot_lead_id");
       const customerId = stringId(object.customer);
@@ -94,8 +105,19 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
         last_invoice_at: new Date().toISOString(),
         status: event.type === "invoice.paid" ? "subscription_active" : "subscription_attention",
       });
+    } else if (event.type === "checkout.session.async_payment_failed") {
+      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "failed" });
     } else if (event.type === "checkout.session.expired") {
       await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "expired" });
+    } else if (event.type === "charge.refunded") {
+      let idValue = metadataValue(object, "pilot_lead_id");
+      if (!idValue && object.payment_intent) {
+        const paymentIntentId = stringId(object.payment_intent);
+        const { data, error } = await db.from("pilot_leads").select("id").eq("stripe_payment_intent_id", paymentIntentId).maybeSingle();
+        if (error) throw new Error("WEBHOOK_LEAD_LOOKUP_FAILED");
+        idValue = data?.id;
+      }
+      await updateLead(db, leadId(idValue), { payment_status: "refunded", refunded_at: new Date().toISOString() });
     }
     await updateWebhookLedger(db, event.id, { processed_at: new Date().toISOString(), processing_error: null });
     return { duplicate: false };
