@@ -7,6 +7,16 @@ export type IncomingCall = {
   raw: Record<string, string>;
 };
 
+export type IncomingSms = {
+  provider: "46elks";
+  providerMessageId: string;
+  senderNumber: string | null;
+  destinationNumber: string | null;
+  message: string;
+  createdAt?: string;
+  raw: Record<string, string>;
+};
+
 export type TextbackNumber = {
   id: string;
   provider: string;
