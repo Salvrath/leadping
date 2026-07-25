@@ -42,7 +42,7 @@ export function PilotForm() {
     if (state.success || state.message || state.errors) statusRef.current?.focus();
   }, [state]);
 
-  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Uppgifterna är mottagna</span><h2>Vi kontrollerar er telefonilösning.</h2><p>Vi återkommer normalt inom en arbetsdag med besked om kompatibilitet och nästa steg. Ingen betalning sker innan ni har bekräftat beställningen.</p></div>;
+  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Uppgifterna är mottagna</span><h2>Vi kontrollerar er telefonilösning.</h2><p>En bekräftelse har skickats till den angivna e-postadressen. Vi återkommer normalt inom en arbetsdag med besked om kompatibilitet och nästa steg. Ingen betalning sker innan ni har bekräftat beställningen.</p></div>;
 
   function begin() {
     if (!started) {
@@ -66,7 +66,7 @@ export function PilotForm() {
   return <form action={action} className="pilot-form" style={{color:"var(--navy)"}} onFocus={begin} noValidate>
     <div ref={statusRef} tabIndex={-1} role="alert" className={state.message || state.errors ? "form-alert" : "sr-only"}>{state.message || (state.errors ? "Kontrollera de markerade fälten." : "")}</div>
     <input type="hidden" name="submissionId" value={submissionId}/><input type="hidden" name="formStartedAt" value={formStartedAt}/><div className="honeypot" aria-hidden="true"><input name="website" tabIndex={-1}/></div>
-    {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>)}
+    {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
     <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
     <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>Kostnadsfri kontroll. Ingen bindningstid och ingen betalning innan beställningen bekräftas.</p>
@@ -76,6 +76,7 @@ export function PilotForm() {
 function Field({name,label,type,error,defaultValue}:{name:FieldName;label:string;type:"text"|"email"|"tel"|"number";error?:string;defaultValue:string}) {
   return <label>{label}<input name={name} type={type} min={type === "number" ? (name === "phoneNumbers" ? 1 : 0) : undefined} defaultValue={defaultValue}/>{error && <span className="error">{error}</span>}</label>;
 }
+
 function Check({name,error,children}:{name:string;error?:string;children:React.ReactNode}) {
   return <label className="check"><input name={name} type="checkbox"/><span>{children}{error && <span className="error block">{error}</span>}</span></label>;
 }
