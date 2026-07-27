@@ -10,13 +10,22 @@ export async function processIncomingSms(sms: IncomingSms) {
 
   const { data: number, error: numberError } = await supabase
     .from("textback_numbers")
-    .select("id,business_name,active")
+    .select("id,business_name")
     .eq("provider", sms.provider)
     .eq("provider_number", sms.destinationNumber)
-    .eq("active", true)
     .maybeSingle();
   if (numberError) throw new Error("TEXTBACK_NUMBER_LOOKUP_FAILED");
   if (!number) return { status: "ignored" as const, reason: "unknown_destination" };
+
+  // Receiving a valid provider webhook is safe even while the company is paused
+  // and proves that the inbound SMS callback is configured correctly.
+  const verifiedAt = new Date().toISOString();
+  const { error: verificationError } = await supabase
+    .from("textback_numbers")
+    .update({ inbound_sms_verified_at: verifiedAt, updated_at: verifiedAt })
+    .eq("id", number.id)
+    .is("inbound_sms_verified_at", null);
+  if (verificationError) throw new Error("INBOUND_SMS_VERIFICATION_UPDATE_FAILED");
 
   const { data: existing, error: existingError } = await supabase
     .from("sms_messages")
