@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { leadSchema, type Lead } from "@/lib/lead-schema";
 import { getLeadStorage } from "@/lib/lead-storage";
 import { isCommerceEnabled, type LaunchMode } from "@/lib/launch-mode";
-import { requireMerchantIdentity } from "@/lib/legal";
+import { hasMerchantIdentity, requireMerchantIdentity } from "@/lib/legal";
 import { notifier, notifySafely } from "@/lib/server/notifications";
 import { createPilotCheckout, createSelfServiceCheckout } from "@/lib/server/stripe";
 import { hasAvailableProviderNumber } from "@/lib/server/provisioning";
@@ -31,7 +31,7 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
   if (!parsed.success) return { success: false, errors: parsed.error.flatten().fieldErrors, values: safeValues };
   if (Date.now() - parsed.data.formStartedAt < 1500) return { success: false, message: "Formuläret skickades för snabbt. Vänta ett ögonblick och försök igen.", values: safeValues };
 
-  const commerceEnabled = isCommerceEnabled();
+  const commerceEnabled = isCommerceEnabled() && hasMerchantIdentity();
   if (commerceEnabled && parsed.data.phoneNumbers !== 1) {
     return {
       success: false,
