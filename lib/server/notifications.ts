@@ -5,6 +5,8 @@ import { customerApplicationEmail, internalApplicationEmail, TEXTBACK_CONTACT_EM
 export interface Notifier {
   application(lead: Lead, id: string): Promise<void>;
   payment(company: string, id: string, paidAt: string): Promise<void>;
+  onboarding(input: { email: string; company: string; providerNumber: string; setupUrl: string; leadId: string }): Promise<void>;
+  capacity(input: { email: string; company: string; leadId: string }): Promise<void>;
 }
 
 type EmailInput = {
@@ -22,6 +24,10 @@ function configured() {
 
 function fromAddress() {
   return process.env.TEXTBACK_FROM_EMAIL || `Textback <${TEXTBACK_CONTACT_EMAIL}>`;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 }
 
 async function sendEmail(input: EmailInput) {
@@ -98,9 +104,33 @@ export const notifier: Notifier = {
       idempotencyKey: `pilot-payment/${id}`,
     });
   },
+  async onboarding({ email, company, providerNumber, setupUrl, leadId }) {
+    if (!configured()) throw new Error("EMAIL_NOT_CONFIGURED");
+    const safeCompany = escapeHtml(company.slice(0, 200));
+    const safeNumber = escapeHtml(providerNumber);
+    const safeUrl = escapeHtml(setupUrl);
+    await sendEmail({
+      to: email,
+      replyTo: TEXTBACK_CONTACT_EMAIL,
+      subject: "Slutför din Textback-anslutning",
+      text: `Betalningen är registrerad och ett Textback-nummer har reserverats för ${company}.\n\nTextback-nummer: ${providerNumber}\n\nVälj lösenord och fortsätt anslutningen här:\n${setupUrl}\n\nLänken gäller i sju dagar.`,
+      html: `<h1>Textback är redo att anslutas</h1><p>Betalningen är registrerad och ett nummer har reserverats för <strong>${safeCompany}</strong>.</p><p><strong>Textback-nummer:</strong> ${safeNumber}</p><p><a href="${safeUrl}">Välj lösenord och fortsätt anslutningen</a></p><p>Länken gäller i sju dagar.</p>`,
+      idempotencyKey: `customer-onboarding/${leadId}`,
+    });
+  },
+  async capacity({ email, company, leadId }) {
+    if (!configured()) return;
+    await sendEmail({
+      to: process.env.TEXTBACK_NOTIFICATION_EMAIL!,
+      replyTo: email,
+      subject: `Nummerpoolen är tom: ${company.slice(0, 160)}`,
+      text: `En betald beställning väntar på ett konfigurerat 46elks-nummer.\nFöretag: ${company}\nLead-id: ${leadId}\nKund: ${email}`,
+      idempotencyKey: `provider-capacity/${leadId}`,
+    });
+  },
 };
 
-export async function notifySafely(task: () => Promise<void>, kind: "application" | "payment") {
+export async function notifySafely(task: () => Promise<void>, kind: "application" | "payment" | "onboarding" | "capacity") {
   try {
     await task();
   } catch (error) {
