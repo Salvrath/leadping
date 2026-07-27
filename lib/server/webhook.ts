@@ -2,6 +2,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { getSupabaseAdmin } from "./supabase";
 import { notifier, notifySafely } from "./notifications";
+import { provisionReadyLead, refreshSelfServiceSubscription, syncSelfServiceSubscription } from "./provisioning";
 import { z } from "zod";
 
 type Db = ReturnType<typeof getSupabaseAdmin>;
@@ -63,25 +64,33 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
   if (!await claimEvent(db, event)) return { duplicate: true };
   try {
     const object = event.data.object as unknown as StripeObject;
-    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
+    if (event.type === "checkout.session.completed" && String(object.mode || "") === "setup") {
+      const id = leadId(metadataValue(object, "pilot_lead_id"));
+      const setupIntentId = stringId(object.setup_intent);
+      const customerId = stringId(object.customer);
+      if (!setupIntentId || !customerId) throw new Error("WEBHOOK_SETUP_DETAILS_MISSING");
+      await updateLead(db, id, {
+        status: "setup_complete",
+        payment_status: "payment_method_saved",
+        stripe_customer_id: customerId,
+        stripe_setup_intent_id: setupIntentId,
+        provisioning_status: "awaiting_number",
+      });
+      await provisionReadyLead(id);
+    } else if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
       const id = leadId(metadataValue(object, "pilot_lead_id"));
       const paymentStatus = String(object.payment_status || "unknown");
       const isSubscription = String(object.mode || "") === "subscription" || Boolean(object.subscription);
       const paid = event.type === "checkout.session.async_payment_succeeded" || ["paid", "no_payment_required"].includes(paymentStatus);
       const paidAt = new Date().toISOString();
       await updateLead(db, id, isSubscription ? {
-        status: "subscription_active",
-        payment_status: paymentStatus,
-        paid_at: paid ? paidAt : null,
-        stripe_customer_id: stringId(object.customer) || null,
-        stripe_subscription_id: stringId(object.subscription) || null,
-        subscription_status: "active",
+        status: "subscription_active", payment_status: paymentStatus, paid_at: paid ? paidAt : null,
+        stripe_customer_id: stringId(object.customer) || null, stripe_subscription_id: stringId(object.subscription) || null,
+        subscription_status: "active", provisioning_status: paid ? "active" : "awaiting_payment",
       } : {
-        status: paid ? "pilot_paid" : "checkout_started",
-        payment_status: paid ? "paid" : paymentStatus,
-        paid_at: paid ? paidAt : null,
-        stripe_customer_id: stringId(object.customer) || null,
-        stripe_payment_intent_id: stringId(object.payment_intent) || null,
+        status: paid ? "pilot_paid" : "checkout_started", payment_status: paid ? "paid" : paymentStatus,
+        paid_at: paid ? paidAt : null, stripe_customer_id: stringId(object.customer) || null,
+        stripe_payment_intent_id: stringId(object.payment_intent) || null, provisioning_status: paid ? "active" : "awaiting_payment",
       });
       if (paid) await notifyPayment(db, id, paidAt);
     } else if (["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
@@ -89,26 +98,36 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
       const customerId = stringId(object.customer);
       const id = metadataId ? leadId(metadataId) : leadId(await findLeadIdByCustomer(db, customerId));
       const status = String(object.status || "unknown");
+      const subscriptionId = String(object.id || "");
+      const paymentMethodId = stringId(object.default_payment_method);
       await updateLead(db, id, {
         ...subscriptionValues(object),
         status: ["active", "trialing"].includes(status) ? "subscription_active" : status === "canceled" ? "subscription_canceled" : "subscription_attention",
         payment_status: status,
       });
+      if (subscriptionId) await syncSelfServiceSubscription({ leadId: id, subscriptionId, subscriptionStatus: status, paymentMethodId });
     } else if (["invoice.paid", "invoice.payment_failed"].includes(event.type)) {
       const customerId = stringId(object.customer);
       if (!customerId) throw new Error("WEBHOOK_CUSTOMER_MISSING");
       const id = leadId(await findLeadIdByCustomer(db, customerId));
+      const now = new Date().toISOString();
       await updateLead(db, id, {
         payment_status: event.type === "invoice.paid" ? "paid" : "failed",
+        paid_at: event.type === "invoice.paid" ? now : undefined,
         last_invoice_status: String(object.status || "unknown"),
         last_invoice_id: String(object.id || ""),
-        last_invoice_at: new Date().toISOString(),
+        last_invoice_at: now,
         status: event.type === "invoice.paid" ? "subscription_active" : "subscription_attention",
       });
+      if (event.type === "invoice.paid") {
+        await notifyPayment(db, id, now);
+        const subscriptionId = stringId(object.subscription);
+        if (subscriptionId) await refreshSelfServiceSubscription(id, subscriptionId);
+      }
     } else if (event.type === "checkout.session.async_payment_failed") {
-      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "failed" });
+      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "failed", provisioning_status: "awaiting_payment" });
     } else if (event.type === "checkout.session.expired") {
-      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "expired" });
+      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "expired", provisioning_status: "awaiting_payment_method" });
     } else if (event.type === "charge.refunded") {
       let idValue = metadataValue(object, "pilot_lead_id");
       if (!idValue && object.payment_intent) {

@@ -22,7 +22,22 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - name: Run tests
+        id: tests
+        shell: bash
+        run: |
+          set +e
+          npm test > /tmp/textback-test.log 2>&1
+          status=$?
+          cat /tmp/textback-test.log
+          exit $status
+      - name: Upload failing test output
+        if: failure() && steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: /tmp/textback-test.log
+          retention-days: 3
       - run: npm run build
       - name: Start production server
         run: |
