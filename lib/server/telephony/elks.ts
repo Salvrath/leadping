@@ -68,8 +68,8 @@ export function getSmsMode(): SmsMode {
   return configured === "live" || configured === "dryrun" ? configured : "log";
 }
 
-export async function sendElksSms(input: { from: string; to: string; message: string; eventId: string }): Promise<SmsResult> {
-  const mode = getSmsMode();
+export async function sendElksSms(input: { from: string; to: string; message: string; eventId: string; modeOverride?: SmsMode }): Promise<SmsResult> {
+  const mode = input.modeOverride || getSmsMode();
   if (mode === "log") {
     console.info("[textback:sms:log]", { to: input.to, from: input.from, eventId: input.eventId, length: input.message.length });
     return { mode, status: "logged" };
