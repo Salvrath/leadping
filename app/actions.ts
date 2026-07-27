@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { leadSchema, type Lead } from "@/lib/lead-schema";
 import { getLeadStorage } from "@/lib/lead-storage";
 import { notifier, notifySafely } from "@/lib/server/notifications";
-import { createPilotCheckout } from "@/lib/server/stripe";
+import { createPilotCheckout, createSelfServiceCheckout } from "@/lib/server/stripe";
 import { hasAvailableProviderNumber } from "@/lib/server/provisioning";
 import { applicationErrorMessage } from "@/lib/application-errors";
 
@@ -25,15 +25,15 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
   try {
     const storage = getLeadStorage();
     const saved = await storage.save(parsed.data);
-    await storage.update(saved.id, { provisioning_status: "awaiting_payment", updated_at: new Date().toISOString() });
+    await storage.update(saved.id, { provisioning_status: "awaiting_payment_method", updated_at: new Date().toISOString() });
 
     if (!await hasAvailableProviderNumber()) {
       await storage.update(saved.id, { provisioning_status: "awaiting_number", provisioning_error: "NO_AVAILABLE_PROVIDER_NUMBER" });
       await notifySafely(() => notifier.capacity({ email: parsed.data.email, company: parsed.data.company, leadId: saved.id }), "capacity");
-      return { success: false, id: saved.id, message: "Textback är tillfälligt fullbokat. Ingen betalning har genomförts. Vi öppnar beställningen igen när ett nytt nummer är tillgängligt.", values: safeValues };
+      return { success: false, id: saved.id, message: "Textback är tillfälligt fullbokat. Ingen betalmetod har registrerats och ingen debitering har skett. Vi öppnar beställningen igen när ett nytt nummer är tillgängligt.", values: safeValues };
     }
 
-    const checkoutUrl = await createPilotCheckout(saved.id, storage);
+    const checkoutUrl = await createSelfServiceCheckout(saved.id, storage);
     return { success: true, id: saved.id, checkoutUrl };
   } catch (error) {
     console.error("[textback] self-service checkout failed", { code: error instanceof Error ? error.message : "UNKNOWN" });
