@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { clearCustomerSession, requireCustomer, setCustomerSession, verifyCustomerPassword } from "@/lib/server/customer-auth";
-import { auditEvent, enforceRateLimit } from "@/lib/server/security";
+import { auditEvent, clearRateLimit, enforceRateLimit, isRateLimitExceededError } from "@/lib/server/security";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { sendElksSms } from "@/lib/server/telephony/elks";
 
@@ -12,7 +12,15 @@ const uuid = z.string().uuid();
 
 export async function loginCustomer(formData: FormData) {
   const email = String(formData.get("email") || "").trim().toLowerCase();
-  await enforceRateLimit({ scope: "customer-login", subject: email, limit: 5, windowSeconds: 900, blockSeconds: 1800 });
+
+  let rateLimitKey: string;
+  try {
+    rateLimitKey = await enforceRateLimit({ scope: "customer-login", subject: email, limit: 5, windowSeconds: 900, blockSeconds: 1800 });
+  } catch (error) {
+    if (isRateLimitExceededError(error)) redirect("/portal/login?error=rate-limit");
+    throw error;
+  }
+
   const password = String(formData.get("password") || "");
   const db = getSupabaseAdmin();
   const { data } = await db.from("customer_users").select("id,textback_number_id,password_hash,active").eq("email", email).maybeSingle();
@@ -20,6 +28,8 @@ export async function loginCustomer(formData: FormData) {
     await auditEvent({ actor: { type: "system" }, action: "customer.login_failed", targetType: "customer_user", metadata: { email } });
     redirect("/portal/login?error=1");
   }
+
+  await clearRateLimit(rateLimitKey);
   await db.from("customer_users").update({ last_login_at: new Date().toISOString() }).eq("id", data.id);
   setCustomerSession(data.id, data.textback_number_id);
   await auditEvent({ actor: { type: "customer", id: data.id }, action: "customer.login_succeeded", targetType: "customer_user", targetId: data.id });
@@ -46,8 +56,15 @@ export async function updateCustomerConversationStatus(formData: FormData) {
 
 export async function sendCustomerReply(formData: FormData) {
   const customer = await requireCustomer();
-  await enforceRateLimit({ scope: "customer-sms", subject: customer.id, limit: 30, windowSeconds: 60, blockSeconds: 300 });
   const conversationId = uuid.parse(String(formData.get("conversation_id") || ""));
+
+  try {
+    await enforceRateLimit({ scope: "customer-sms", subject: customer.id, limit: 30, windowSeconds: 60, blockSeconds: 300 });
+  } catch (error) {
+    if (isRateLimitExceededError(error)) redirect(`/portal/conversations/${conversationId}?error=rate-limit`);
+    throw error;
+  }
+
   const requestId = uuid.parse(String(formData.get("request_id") || ""));
   const body = String(formData.get("message") || "").trim();
   if (!body || body.length > 1600) throw new Error("INVALID_OUTBOUND_MESSAGE");
