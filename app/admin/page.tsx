@@ -13,11 +13,13 @@ function date(value?: string | null) {
 export default async function AdminPage() {
   requireAdmin();
   const db = getSupabaseAdmin();
-  const [{ data: numbers }, { data: conversations }, { data: calls }, { count: openIncidents }] = await Promise.all([
+  const [{ data: numbers }, { data: conversations }, { data: calls }, { count: openIncidents }, { count: availableNumbers }, { count: waitingCustomers }] = await Promise.all([
     db.from("textback_numbers").select("id,business_name,provider_number,business_phone_numbers,active,provider,updated_at").order("business_name"),
     db.from("conversations").select("id,customer_number,status,latest_inbound_preview,last_message_at,textback_numbers(business_name,provider_number)").order("last_message_at", { ascending: false }).limit(50),
     db.from("missed_call_events").select("id,status,reason,caller_number,created_at,sms_delivered_at,textback_numbers(business_name)").order("created_at", { ascending: false }).limit(50),
     db.from("operational_incidents").select("id", { count: "exact", head: true }).is("resolved_at", null),
+    db.from("provider_number_inventory").select("id", { count: "exact", head: true }).eq("status", "available"),
+    db.from("pilot_leads").select("id", { count: "exact", head: true }).eq("provisioning_status", "awaiting_number").not("paid_at", "is", null),
   ]);
 
   const allCalls = calls || [];
@@ -34,7 +36,7 @@ export default async function AdminPage() {
   return <main style={{minHeight:"100vh",background:"#f4f7fb",color:"#10213f",padding:"24px clamp(16px,4vw,56px) 56px"}}>
     <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:20,marginBottom:28,flexWrap:"wrap"}}>
       <div><img src="/textback-logo.svg" alt="Textback" width="180" height="45"/><p style={{margin:"8px 0 0",color:"#64748b"}}>Intern driftpanel</p></div>
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><Link href="/admin/data" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Dataskydd</Link><Link href="/admin/audit" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Revisionslogg</Link><Link href="/admin/operations" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Driftövervakning{openIncidents ? ` (${openIncidents})` : ""}</Link><Link href="/admin/companies/new" style={{background:"#1976d2",color:"white",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Lägg till företag</Link><form action={logoutAdmin}><button style={{border:"1px solid #cbd5e1",background:"white",padding:"10px 14px",borderRadius:10,cursor:"pointer"}}>Logga ut</button></form></div>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><Link href="/admin/provider-numbers" style={{border:"1px solid #cbd5e1",background:waitingCustomers?"#fff7ed":"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>46elks-nummer ({availableNumbers || 0}){waitingCustomers ? ` · ${waitingCustomers} väntar` : ""}</Link><Link href="/admin/customers" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Kundkonton</Link><Link href="/admin/data" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Dataskydd</Link><Link href="/admin/audit" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Revisionslogg</Link><Link href="/admin/operations" style={{border:"1px solid #cbd5e1",background:"white",color:"#10213f",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Driftövervakning{openIncidents ? ` (${openIncidents})` : ""}</Link><Link href="/admin/companies/new" style={{background:"#1976d2",color:"white",padding:"10px 14px",borderRadius:10,textDecoration:"none",fontWeight:800}}>Lägg till företag</Link><form action={logoutAdmin}><button style={{border:"1px solid #cbd5e1",background:"white",padding:"10px 14px",borderRadius:10,cursor:"pointer"}}>Logga ut</button></form></div>
     </header>
 
     <section style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:16,marginBottom:24}}>
