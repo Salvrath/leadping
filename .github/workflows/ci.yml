@@ -21,7 +21,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm run typecheck
+      - name: Run typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck > /tmp/textback-typecheck.log 2>&1
+          status=$?
+          cat /tmp/textback-typecheck.log
+          exit $status
+      - name: Upload failing typecheck output
+        if: failure() && steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-output
+          path: /tmp/textback-typecheck.log
+          retention-days: 3
       - name: Run tests
         id: tests
         shell: bash
