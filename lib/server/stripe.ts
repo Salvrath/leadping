@@ -54,6 +54,71 @@ export async function getPilotPriceDisplay() {
   } catch { return null; }
 }
 
+export async function createSelfServiceCheckout(leadId: string, storage: LeadStorage) {
+  const id = z.string().uuid().parse(leadId);
+  const lead = await storage.find(id);
+  if (!lead) throw new Error("LEAD_NOT_FOUND");
+  const client = getStripe();
+  await validateSubscriptionPricing(client);
+  const origin = safeSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL);
+
+  let customerId = lead.stripe_customer_id || null;
+  if (!customerId) {
+    const customer = await client.customers.create({
+      email: lead.email,
+      name: lead.company,
+      metadata: { pilot_lead_id: id },
+    }, { idempotencyKey: `textback-customer-${id}` });
+    customerId = customer.id;
+    await storage.update(id, { stripe_customer_id: customerId });
+  }
+
+  const session = await client.checkout.sessions.create({
+    mode: "setup",
+    currency: EXPECTED_CURRENCY,
+    customer: customerId,
+    client_reference_id: id,
+    billing_address_collection: "required",
+    tax_id_collection: { enabled: true },
+    metadata: { pilot_lead_id: id },
+    setup_intent_data: { metadata: { pilot_lead_id: id } },
+    consent_collection: { terms_of_service: "required" },
+    custom_text: { submit: { message: "Betalmetoden sparas säkert. Ingen debitering sker förrän telefonin har verifierats och Textback aktiveras." } },
+    success_url: `${origin}/pilot/tack?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/pilot/avbruten?lead_id=${id}`,
+  }, { idempotencyKey: `textback-setup-checkout-${id}` });
+  if (!session.url) throw new Error("CHECKOUT_URL_MISSING");
+  await storage.update(id, {
+    status: "checkout_started",
+    payment_status: "awaiting_payment_method",
+    provisioning_status: "awaiting_payment_method",
+    stripe_checkout_session_id: session.id,
+  });
+  return session.url;
+}
+
+export async function createSelfServiceSubscription(input: {
+  leadId: string;
+  customerId: string;
+  paymentMethodId: string;
+}) {
+  const client = getStripe();
+  await validateSubscriptionPricing(client);
+  const priceId = process.env.STRIPE_STANDARD_PRICE_ID!;
+  const couponId = process.env.STRIPE_LAUNCH_COUPON_ID!;
+  return client.subscriptions.create({
+    customer: input.customerId,
+    items: [{ price: priceId }],
+    discounts: [{ coupon: couponId }],
+    default_payment_method: input.paymentMethodId,
+    automatic_tax: { enabled: true },
+    payment_behavior: "default_incomplete",
+    payment_settings: { save_default_payment_method: "on_subscription" },
+    metadata: { pilot_lead_id: input.leadId },
+    expand: ["latest_invoice.payment_intent"],
+  }, { idempotencyKey: `textback-subscription-${input.leadId}` });
+}
+
 export async function createPilotCheckout(leadId: string, storage: LeadStorage) {
   return createPilotCheckoutWithStripe(leadId, storage, getStripe(), {
     standardPrice: process.env.STRIPE_STANDARD_PRICE_ID,
