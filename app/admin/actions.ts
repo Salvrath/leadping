@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { clearAdminSession, createAdminSession, requireAdmin, verifyAdminPassword } from "@/lib/server/admin-auth";
+import { clearAdminSession, createAdminSession, isAdminAuthConfigured, requireAdmin, verifyAdminPassword } from "@/lib/server/admin-auth";
 import { parseCompanyForm } from "@/lib/server/admin-company";
 import { activationReadiness, assertActivationStep } from "@/lib/server/company-activation";
 import { hashCustomerPassword } from "@/lib/server/customer-auth";
@@ -15,6 +15,7 @@ const adminActor = { type: "admin" as const, id: "internal-admin" };
 const refreshCompany = (id: string) => { revalidatePath("/admin"); revalidatePath(`/admin/companies/${id}`); };
 
 export async function loginAdmin(formData: FormData) {
+  if (!isAdminAuthConfigured()) redirect("/admin/login?error=config");
   await enforceRateLimit({ scope: "admin-login", limit: 5, windowSeconds: 900, blockSeconds: 1800 });
   const password = String(formData.get("password") || "");
   if (!verifyAdminPassword(password)) {
@@ -25,6 +26,7 @@ export async function loginAdmin(formData: FormData) {
   await auditEvent({ actor: adminActor, action: "admin.login_succeeded", targetType: "admin_session" });
   redirect("/admin");
 }
+
 export async function logoutAdmin() { await auditEvent({ actor: adminActor, action: "admin.logout", targetType: "admin_session" }); clearAdminSession(); redirect("/admin/login"); }
 
 export async function updateConversationStatus(formData: FormData) {
