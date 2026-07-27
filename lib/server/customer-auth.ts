@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { redirect } from "next/navigation";
 import { getSupabaseAdmin } from "./supabase";
+import { finalizeReadySelfServiceNumber } from "./provisioning";
 
 const COOKIE = "textback_customer_session";
 const MAX_AGE = 60 * 60 * 12;
@@ -73,6 +74,7 @@ export async function requireCustomer() {
     .update({ portal_account_verified_at: now, updated_at: now })
     .eq("id", session.numberId)
     .is("portal_account_verified_at", null);
+  await finalizeReadySelfServiceNumber(session.numberId);
 
   return data as any;
 }
