@@ -5,6 +5,17 @@ import { getSupabaseAdmin } from "./supabase";
 
 export type AuditActor = { type: "admin" | "customer" | "system"; id?: string | null };
 
+export class RateLimitExceededError extends Error {
+  constructor() {
+    super("RATE_LIMITED");
+    this.name = "RateLimitExceededError";
+  }
+}
+
+export function isRateLimitExceededError(error: unknown): error is RateLimitExceededError {
+  return error instanceof RateLimitExceededError || (error instanceof Error && error.message === "RATE_LIMITED");
+}
+
 function requestFingerprint(scope: string, subject?: string) {
   const h = headers();
   const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -28,7 +39,13 @@ export async function enforceRateLimit(options: {
     p_block_seconds: options.blockSeconds,
   });
   if (error) throw new Error("RATE_LIMIT_CHECK_FAILED");
-  if (data !== true) throw new Error("RATE_LIMITED");
+  if (data !== true) throw new RateLimitExceededError();
+  return key;
+}
+
+export async function clearRateLimit(key: string) {
+  const { error } = await getSupabaseAdmin().from("rate_limit_buckets").delete().eq("key", key);
+  if (error) console.error("[rate-limit] clear failed", { code: error.code });
 }
 
 export async function auditEvent(input: {
