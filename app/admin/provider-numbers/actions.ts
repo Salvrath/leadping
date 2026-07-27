@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/server/admin-auth";
 import { normalizePhoneNumber } from "@/lib/server/telephony/number";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
-import { provisionPaidLead } from "@/lib/server/provisioning";
+import { provisionReadyLead } from "@/lib/server/provisioning";
 import { auditEvent } from "@/lib/server/security";
 
 const adminActor = { type: "admin" as const, id: "internal-admin" };
@@ -25,9 +25,10 @@ export async function addProviderNumber(formData: FormData) {
   await auditEvent({ actor: adminActor, action: "provider_number.added", targetType: "provider_number_inventory", targetId: data.id, metadata: { provider: "46elks", provider_number: providerNumber } });
 
   const { data: waiting } = await db.from("pilot_leads")
-    .select("id").eq("provisioning_status", "awaiting_number").not("paid_at", "is", null)
-    .in("subscription_status", ["active", "trialing"]).order("paid_at").limit(1).maybeSingle();
-  if (waiting?.id) await provisionPaidLead(waiting.id);
+    .select("id").eq("provisioning_status", "awaiting_number")
+    .eq("payment_status", "payment_method_saved").not("stripe_setup_intent_id", "is", null)
+    .order("created_at").limit(1).maybeSingle();
+  if (waiting?.id) await provisionReadyLead(waiting.id);
   revalidatePath("/admin/provider-numbers");
   redirect("/admin/provider-numbers");
 }
