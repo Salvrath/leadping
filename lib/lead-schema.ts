@@ -17,7 +17,7 @@ export const leadSchema = z.object({
   email: z.string().trim().email("Ange en giltig e-postadress").max(254),
   phone: text("ett giltigt telefonnummer", 40),
   businessPhone: text("företagets huvudsakliga telefonnummer", 40),
-  phoneNumbers: z.coerce.number().int().min(1, "Ange ett telefonnummer").max(1, "Självbetjäningen stöder ett telefonnummer per abonnemang"),
+  phoneNumbers: z.coerce.number().int().min(1, "Ange minst ett telefonnummer").max(100),
   telephony: text("operatör eller telefonilösning", 160),
   industry: z.string().trim().max(120).optional(),
   missedCalls: z.coerce.number().int().min(0).max(10000).optional(),
