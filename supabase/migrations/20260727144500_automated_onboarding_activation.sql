@@ -122,7 +122,7 @@ begin
   if not found or v_token.used_at is not null or v_token.expires_at <= now() then raise exception 'ONBOARDING_TOKEN_INVALID'; end if;
   select * into v_lead from public.pilot_leads where id=v_token.pilot_lead_id for update;
   if not found then raise exception 'LEAD_NOT_FOUND'; end if;
-  if p_password_hash !~ '^scrypt\\$[0-9a-f]+\\$[0-9a-f]+$' then raise exception 'INVALID_PASSWORD_HASH'; end if;
+  if p_password_hash not like 'scrypt$%$%' or length(p_password_hash) > 400 then raise exception 'INVALID_PASSWORD_HASH'; end if;
   select * into v_existing from public.customer_users where email=lower(v_lead.email) for update;
   if found and v_existing.textback_number_id <> v_token.textback_number_id then raise exception 'CUSTOMER_EMAIL_ALREADY_EXISTS'; end if;
 
