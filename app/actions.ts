@@ -19,6 +19,7 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
     telephony: String(raw.telephony || ""), industry: String(raw.industry || ""), missedCalls: Number(raw.missedCalls || 0), message: String(raw.message || ""),
   };
   if (!parsed.success) return { success: false, errors: parsed.error.flatten().fieldErrors, values: safeValues };
+  if (parsed.data.phoneNumbers !== 1) return { success: false, errors: { phoneNumbers: ["Självbetjäningen stöder ett telefonnummer per abonnemang. Kontakta info@textback.se för flera nummer."] }, values: safeValues };
   if (Date.now() - parsed.data.formStartedAt < 1500) return { success: false, message: "Formuläret skickades för snabbt. Vänta ett ögonblick och försök igen.", values: safeValues };
 
   try {
