@@ -6,7 +6,7 @@ import { clearAdminSession, createAdminSession, isAdminAuthConfigured, requireAd
 import { parseCompanyForm } from "@/lib/server/admin-company";
 import { activationReadiness, assertActivationStep } from "@/lib/server/company-activation";
 import { hashCustomerPassword } from "@/lib/server/customer-auth";
-import { auditEvent, enforceRateLimit } from "@/lib/server/security";
+import { auditEvent, clearRateLimit, enforceRateLimit, isRateLimitExceededError } from "@/lib/server/security";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { z } from "zod";
 
@@ -16,12 +16,22 @@ const refreshCompany = (id: string) => { revalidatePath("/admin"); revalidatePat
 
 export async function loginAdmin(formData: FormData) {
   if (!isAdminAuthConfigured()) redirect("/admin/login?error=config");
-  await enforceRateLimit({ scope: "admin-login", limit: 5, windowSeconds: 900, blockSeconds: 1800 });
+
+  let rateLimitKey: string;
+  try {
+    rateLimitKey = await enforceRateLimit({ scope: "admin-login", limit: 5, windowSeconds: 900, blockSeconds: 1800 });
+  } catch (error) {
+    if (isRateLimitExceededError(error)) redirect("/admin/login?error=rate-limit");
+    throw error;
+  }
+
   const password = String(formData.get("password") || "");
   if (!verifyAdminPassword(password)) {
     await auditEvent({ actor: { type: "system" }, action: "admin.login_failed", targetType: "admin_session" });
     redirect("/admin/login?error=1");
   }
+
+  await clearRateLimit(rateLimitKey);
   createAdminSession();
   await auditEvent({ actor: adminActor, action: "admin.login_succeeded", targetType: "admin_session" });
   redirect("/admin");
