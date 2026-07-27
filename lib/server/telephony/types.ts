@@ -26,6 +26,7 @@ export type TextbackNumber = {
   sms_template: string;
   sms_sender: string | null;
   active: boolean;
+  onboarding_test_mode?: boolean;
 };
 
 export type SmsMode = "log" | "dryrun" | "live";
