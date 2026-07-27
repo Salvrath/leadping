@@ -63,13 +63,13 @@ export async function parseElksIncomingSms(request: Request): Promise<IncomingSm
   };
 }
 
-function smsMode(): SmsMode {
+export function getSmsMode(): SmsMode {
   const configured = process.env.TEXTBACK_SMS_MODE;
   return configured === "live" || configured === "dryrun" ? configured : "log";
 }
 
 export async function sendElksSms(input: { from: string; to: string; message: string; eventId: string }): Promise<SmsResult> {
-  const mode = smsMode();
+  const mode = getSmsMode();
   if (mode === "log") {
     console.info("[textback:sms:log]", { to: input.to, from: input.from, eventId: input.eventId, length: input.message.length });
     return { mode, status: "logged" };
