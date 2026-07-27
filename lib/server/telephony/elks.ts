@@ -1,6 +1,6 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
-import { siteUrl } from "@/lib/site";
+import { webhookBaseUrl } from "@/lib/site";
 import { normalizePhoneNumber } from "./number";
 import type { IncomingCall, IncomingSms, SmsMode, SmsResult } from "./types";
 
@@ -83,7 +83,7 @@ export async function sendElksSms(input: { from: string; to: string; message: st
     from: input.from,
     to: input.to,
     message: input.message,
-    whendelivered: `${siteUrl}/api/telephony/46elks/sms-status?secret=${encodeURIComponent(secret)}`,
+    whendelivered: `${webhookBaseUrl}/api/telephony/46elks/sms-status?secret=${encodeURIComponent(secret)}`,
     dontlog: "message",
   });
   if (mode === "dryrun") body.set("dryrun", "yes");
