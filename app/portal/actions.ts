@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { clearCustomerSession, requireCustomer, setCustomerSession, verifyCustomerPassword } from "@/lib/server/customer-auth";
+import { clearCustomerSession, isCustomerAuthConfigured, requireCustomer, setCustomerSession, verifyCustomerPassword } from "@/lib/server/customer-auth";
 import { auditEvent, clearRateLimit, enforceRateLimit, isRateLimitExceededError } from "@/lib/server/security";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { sendElksSms } from "@/lib/server/telephony/elks";
@@ -11,6 +11,8 @@ import { sendElksSms } from "@/lib/server/telephony/elks";
 const uuid = z.string().uuid();
 
 export async function loginCustomer(formData: FormData) {
+  if (!isCustomerAuthConfigured()) redirect("/portal/login?error=config");
+
   const email = String(formData.get("email") || "").trim().toLowerCase();
 
   let rateLimitKey: string;
@@ -30,8 +32,8 @@ export async function loginCustomer(formData: FormData) {
   }
 
   await clearRateLimit(rateLimitKey);
-  await db.from("customer_users").update({ last_login_at: new Date().toISOString() }).eq("id", data.id);
   setCustomerSession(data.id, data.textback_number_id);
+  await db.from("customer_users").update({ last_login_at: new Date().toISOString() }).eq("id", data.id);
   await auditEvent({ actor: { type: "customer", id: data.id }, action: "customer.login_succeeded", targetType: "customer_user", targetId: data.id });
   redirect("/portal");
 }
