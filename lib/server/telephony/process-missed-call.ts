@@ -1,8 +1,8 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { normalizePhoneNumber, samePhoneNumber } from "./number";
-import { sendElksSms } from "./elks";
-import type { IncomingCall, TextbackNumber } from "./types";
+import { getSmsMode, sendElksSms } from "./elks";
+import type { IncomingCall, SmsMode, TextbackNumber } from "./types";
 
 const DEFAULT_TEMPLATE = "Hej! Vi kunde inte svara just nu. Beskriv gärna vad du behöver hjälp med, så återkommer vi så snart vi kan. / {{businessName}}";
 const MAX_SMS_ATTEMPTS = 3;
@@ -11,6 +11,10 @@ const RETRY_DELAYS_MINUTES = [1, 5, 30] as const;
 function dedupeMinutes(): number {
   const value = Number(process.env.TEXTBACK_DEDUPE_MINUTES || 60);
   return Number.isFinite(value) && value >= 1 && value <= 1440 ? Math.floor(value) : 60;
+}
+
+export function canProcessInactiveNumber(mode: SmsMode): boolean {
+  return mode === "dryrun" || mode === "log";
 }
 
 export function renderMessage(template: string, businessName: string): string {
@@ -104,7 +108,6 @@ export async function processMissedCall(call: IncomingCall) {
     .select("id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active")
     .eq("provider", call.provider)
     .eq("provider_number", call.destinationNumber)
-    .eq("active", true)
     .maybeSingle();
   if (numberError) throw new Error("TEXTBACK_NUMBER_LOOKUP_FAILED");
   if (!number) {
@@ -112,6 +115,10 @@ export async function processMissedCall(call: IncomingCall) {
     return { status: "ignored" as const, reason: "unknown_destination" };
   }
   const config = number as TextbackNumber;
+  if (!config.active && !canProcessInactiveNumber(getSmsMode())) {
+    await createIgnoredEvent(call, "inactive_destination", config.id);
+    return { status: "ignored" as const, reason: "inactive_destination" };
+  }
   if (!call.callerNumber) {
     await createIgnoredEvent(call, "hidden_or_invalid_caller", config.id);
     return { status: "ignored" as const, reason: "hidden_or_invalid_caller" };
