@@ -97,24 +97,30 @@ export async function syncSelfServiceSubscription(input: {
   paymentMethodId?: string;
 }) {
   const db = getSupabaseAdmin();
-  let paymentMethodId = input.paymentMethodId;
-  if (!paymentMethodId) {
-    const { data } = await db.from("pilot_leads").select("stripe_payment_method_id").eq("id", input.leadId).maybeSingle();
-    paymentMethodId = data?.stripe_payment_method_id || "";
-  }
+  const { data: lead, error: leadError } = await db.from("pilot_leads")
+    .select("textback_number_id,stripe_setup_intent_id,stripe_payment_method_id")
+    .eq("id", input.leadId).maybeSingle();
+  if (leadError) throw new Error("BILLING_LEAD_LOOKUP_FAILED");
+  if (!lead?.textback_number_id || !lead.stripe_setup_intent_id) return { status: "not_self_service" as const };
+
+  const paymentMethodId = input.paymentMethodId || lead.stripe_payment_method_id || "unknown";
   const { error } = await db.rpc("complete_self_service_billing", {
     p_lead_id: input.leadId,
     p_subscription_id: input.subscriptionId,
     p_subscription_status: input.subscriptionStatus,
-    p_payment_method_id: paymentMethodId || "unknown",
+    p_payment_method_id: paymentMethodId,
   });
   if (error) throw new Error("BILLING_COMPLETION_FAILED");
+  return { status: input.subscriptionStatus };
 }
 
 export async function finalizeReadySelfServiceNumber(textbackNumberId: string) {
   const db = getSupabaseAdmin();
   const { data, error } = await db.rpc("claim_self_service_billing", { p_textback_number_id: textbackNumberId });
-  if (error) throw new Error("BILLING_CLAIM_FAILED");
+  if (error) {
+    console.error("[textback:billing] billing claim failed", { textbackNumberId });
+    return { status: "billing_attention", reason: "BILLING_CLAIM_FAILED" };
+  }
   const claim = data as BillingClaim;
   if (claim.status !== "claimed" || !claim.lead_id || !claim.stripe_customer_id || !claim.stripe_setup_intent_id) return claim;
 
