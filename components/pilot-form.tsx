@@ -11,12 +11,14 @@ const attributionNames = ["utm_source", "utm_medium", "utm_campaign", "utm_conte
 type FieldName = "company" | "contact" | "email" | "phone" | "businessPhone" | "phoneNumbers" | "telephony" | "industry" | "missedCalls";
 type FieldDefinition = readonly [FieldName, string, "text" | "email" | "tel" | "number"];
 
-function SubmitButton({ ready }: { ready: boolean }) {
+function SubmitButton({ ready, commerceEnabled }: { ready: boolean; commerceEnabled: boolean }) {
   const { pending } = useFormStatus();
-  return <button className="button large" disabled={pending || !ready}>{pending ? "Förbereder säker registrering…" : "Starta anslutningen"}</button>;
+  const label = commerceEnabled ? "Starta anslutningen" : "Anmäl intresse";
+  const pendingLabel = commerceEnabled ? "Förbereder säker registrering…" : "Registrerar intresse…";
+  return <button className="button large" disabled={pending || !ready}>{pending ? pendingLabel : label}</button>;
 }
 
-export function PilotForm() {
+export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boolean }) {
   const [state, action] = useFormState(submitPilot, initial);
   const [started, setStarted] = useState(false);
   const [meta, setMeta] = useState<Record<string,string>>({});
@@ -51,7 +53,13 @@ export function PilotForm() {
     }
   }, [state]);
 
-  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Anslutningen är förberedd</span><h2>Öppnar Stripe…</h2><p>Du registrerar en betalmetod säkert hos Stripe, men debiteras inte nu. Ett Textback-nummer reserveras automatiskt och abonnemanget startar först när telefonin har klarat anslutningstesterna.</p>{state.checkoutUrl && <a className="button large" href={state.checkoutUrl}>Registrera betalmetod</a>}</div>;
+  if (state.success && state.checkoutUrl) {
+    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Anslutningen är förberedd</span><h2>Öppnar Stripe…</h2><p>Du registrerar en betalmetod säkert hos Stripe, men debiteras inte nu. Ett Textback-nummer reserveras automatiskt och abonnemanget startar först när telefonin har klarat anslutningstesterna.</p><a className="button large" href={state.checkoutUrl}>Registrera betalmetod</a></div>;
+  }
+
+  if (state.success) {
+    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Intresset är registrerat</span><h2>Tack. Du är med i valideringen.</h2><p>Ingen beställning har gjorts och ingen betalning sker. Vi använder intresseanmälningarna för att avgöra om Textback ska öppnas för pilotkunder.</p></div>;
+  }
 
   function begin() {
     if (!started) {
@@ -66,7 +74,7 @@ export function PilotForm() {
     ["email", "E-post *", "email"],
     ["phone", "Ditt telefonnummer *", "tel"],
     ["businessPhone", "Företagets huvudsakliga telefonnummer *", "tel"],
-    ["phoneNumbers", "Hur många telefonnummer ska anslutas? *", "number"],
+    ["phoneNumbers", "Hur många telefonnummer skulle ni vilja ansluta? *", "number"],
     ["telephony", "Nuvarande operatör eller telefonilösning *", "text"],
     ["industry", "Bransch (frivilligt)", "text"],
     ["missedCalls", "Missade samtal per vecka (frivilligt)", "number"],
@@ -78,7 +86,7 @@ export function PilotForm() {
     {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
     <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras.</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)} commerceEnabled={commerceEnabled}/><p className="fine" style={{color:"#64748b"}}>{commerceEnabled ? "495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras." : "Kostnadsfri intresseanmälan. Ingen beställning, betalmetod eller betalning registreras i valideringsfasen."}</p>
   </form>;
 }
 
