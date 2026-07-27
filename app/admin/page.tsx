@@ -19,7 +19,7 @@ export default async function AdminPage() {
     db.from("missed_call_events").select("id,status,reason,caller_number,created_at,sms_delivered_at,textback_numbers(business_name)").order("created_at", { ascending: false }).limit(50),
     db.from("operational_incidents").select("id", { count: "exact", head: true }).is("resolved_at", null),
     db.from("provider_number_inventory").select("id", { count: "exact", head: true }).eq("status", "available"),
-    db.from("pilot_leads").select("id", { count: "exact", head: true }).eq("provisioning_status", "awaiting_number").not("paid_at", "is", null),
+    db.from("pilot_leads").select("id", { count: "exact", head: true }).eq("provisioning_status", "awaiting_number").eq("payment_status", "payment_method_saved"),
   ]);
 
   const allCalls = calls || [];
