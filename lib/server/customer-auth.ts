@@ -62,9 +62,17 @@ export function readCustomerSession(): Session | null {
 export async function requireCustomer() {
   const session = readCustomerSession();
   if (!session) redirect("/portal/login");
-  const { data, error } = await getSupabaseAdmin().from("customer_users")
+  const db = getSupabaseAdmin();
+  const { data, error } = await db.from("customer_users")
     .select("id,email,textback_number_id,active,textback_numbers(id,business_name,provider_number,business_phone_numbers,sms_template,sms_sender,active)")
     .eq("id", session.userId).eq("textback_number_id", session.numberId).eq("active", true).maybeSingle();
   if (error || !data) redirect("/portal/login");
+
+  const now = new Date().toISOString();
+  await db.from("textback_numbers")
+    .update({ portal_account_verified_at: now, updated_at: now })
+    .eq("id", session.numberId)
+    .is("portal_account_verified_at", null);
+
   return data as any;
 }

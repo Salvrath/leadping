@@ -6,7 +6,7 @@ import { z } from "zod";
 import { clearCustomerSession, isCustomerAuthConfigured, requireCustomer, setCustomerSession, verifyCustomerPassword } from "@/lib/server/customer-auth";
 import { auditEvent, clearRateLimit, enforceRateLimit, isRateLimitExceededError } from "@/lib/server/security";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
-import { sendElksSms } from "@/lib/server/telephony/elks";
+import { getSmsMode, sendElksSms } from "@/lib/server/telephony/elks";
 
 const uuid = z.string().uuid();
 
@@ -77,18 +77,20 @@ export async function sendCustomerReply(formData: FormData) {
   if (existing) { revalidatePath(`/portal/conversations/${conversationId}`); return; }
 
   const { data: conversation, error: conversationError } = await db.from("conversations")
-    .select("id,customer_number,textback_number_id,textback_numbers(provider,provider_number,active)")
+    .select("id,customer_number,status,textback_number_id,textback_numbers(provider,provider_number,active)")
     .eq("id", conversationId).eq("textback_number_id", customer.textback_number_id).maybeSingle();
   if (conversationError || !conversation) throw new Error("CONVERSATION_NOT_FOUND");
   const number = Array.isArray(conversation.textback_numbers) ? conversation.textback_numbers[0] : conversation.textback_numbers;
-  if (!number?.active || number.provider !== "46elks") throw new Error("TEXTBACK_NUMBER_INACTIVE");
+  const smsMode = getSmsMode();
+  if (!number || number.provider !== "46elks") throw new Error("TEXTBACK_PROVIDER_UNSUPPORTED");
+  if (!number.active && smsMode === "live") throw new Error("TEXTBACK_NUMBER_INACTIVE");
 
   const now = new Date().toISOString();
   const { data: message, error: insertError } = await db.from("sms_messages").insert({
     conversation_id: conversation.id, textback_number_id: customer.textback_number_id, provider: "46elks",
     client_request_id: requestId, direction: "outbound", sender_number: number.provider_number,
     recipient_number: conversation.customer_number, body, delivery_status: "sending",
-    raw_event: { source: "customer_portal", customer_user_id: customer.id },
+    raw_event: { source: "customer_portal", customer_user_id: customer.id, mode: smsMode },
   }).select("id").single();
   if (insertError || !message) {
     if ((insertError as { code?: string } | null)?.code === "23505") return;
@@ -103,8 +105,19 @@ export async function sendCustomerReply(formData: FormData) {
       sms_parts: result.parts || null, sms_cost: result.cost || null, sent_at: now,
       raw_event: { source: "customer_portal", mode: result.mode, provider_status: result.providerStatus || null },
     }).eq("id", message.id).eq("textback_number_id", customer.textback_number_id);
-    await db.from("conversations").update({ status: "contacted", last_message_at: now, updated_at: now })
+
+    const conversationUpdate: Record<string, unknown> = { last_message_at: now, updated_at: now };
+    if (result.mode === "live") conversationUpdate.status = "contacted";
+    await db.from("conversations").update(conversationUpdate)
       .eq("id", conversation.id).eq("textback_number_id", customer.textback_number_id);
+
+    if (result.mode === "dryrun" || result.mode === "live") {
+      await db.from("textback_numbers")
+        .update({ outbound_sms_verified_at: now, updated_at: now })
+        .eq("id", customer.textback_number_id)
+        .is("outbound_sms_verified_at", null);
+    }
+
     await auditEvent({ actor: { type: "customer", id: customer.id }, action: "sms.sent", targetType: "sms_message", targetId: message.id, metadata: { conversation_id: conversation.id, mode: result.mode } });
   } catch (error) {
     const reason = error instanceof Error ? error.message.slice(0, 200) : "UNKNOWN";
