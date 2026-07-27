@@ -2,6 +2,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { getSupabaseAdmin } from "./supabase";
 import { notifier, notifySafely } from "./notifications";
+import { provisionPaidLead } from "./provisioning";
 import { z } from "zod";
 
 type Db = ReturnType<typeof getSupabaseAdmin>;
@@ -76,14 +77,19 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
         stripe_customer_id: stringId(object.customer) || null,
         stripe_subscription_id: stringId(object.subscription) || null,
         subscription_status: "active",
+        provisioning_status: paid ? "awaiting_number" : "awaiting_payment",
       } : {
         status: paid ? "pilot_paid" : "checkout_started",
         payment_status: paid ? "paid" : paymentStatus,
         paid_at: paid ? paidAt : null,
         stripe_customer_id: stringId(object.customer) || null,
         stripe_payment_intent_id: stringId(object.payment_intent) || null,
+        provisioning_status: paid ? "awaiting_number" : "awaiting_payment",
       });
-      if (paid) await notifyPayment(db, id, paidAt);
+      if (paid) {
+        await notifyPayment(db, id, paidAt);
+        await provisionPaidLead(id);
+      }
     } else if (["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
       const metadataId = metadataValue(object, "pilot_lead_id");
       const customerId = stringId(object.customer);
@@ -106,9 +112,9 @@ export async function processStripeEvent(event: Stripe.Event, db: Db = getSupaba
         status: event.type === "invoice.paid" ? "subscription_active" : "subscription_attention",
       });
     } else if (event.type === "checkout.session.async_payment_failed") {
-      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "failed" });
+      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "failed", provisioning_status: "awaiting_payment" });
     } else if (event.type === "checkout.session.expired") {
-      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "expired" });
+      await updateLead(db, leadId(metadataValue(object, "pilot_lead_id")), { payment_status: "expired", provisioning_status: "awaiting_payment" });
     } else if (event.type === "charge.refunded") {
       let idValue = metadataValue(object, "pilot_lead_id");
       if (!idValue && object.payment_intent) {
