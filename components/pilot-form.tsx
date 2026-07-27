@@ -58,7 +58,7 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
   }
 
   if (state.success) {
-    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Intresset är registrerat</span><h2>Tack. Du är med i valideringen.</h2><p>Ingen beställning har gjorts och ingen betalning sker. Vi använder intresseanmälningarna för att avgöra om Textback ska öppnas för pilotkunder.</p></div>;
+    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Intresset är registrerat</span><h2>Tack för er intresseanmälan.</h2><p>Vi har registrerat era uppgifter och återkommer när anslutningen öppnar. Ingen beställning eller betalning har genomförts.</p></div>;
   }
 
   function begin() {
@@ -86,7 +86,7 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
     {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
     <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)} commerceEnabled={commerceEnabled}/><p className="fine" style={{color:"#64748b"}}>{commerceEnabled ? "495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras." : "Kostnadsfri intresseanmälan. Ingen beställning, betalmetod eller betalning registreras i valideringsfasen."}</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)} commerceEnabled={commerceEnabled}/><p className="fine" style={{color:"#64748b"}}>{commerceEnabled ? "495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras." : "Intresseanmälan är kostnadsfri och innebär ingen beställning eller betalning."}</p>
   </form>;
 }
 
