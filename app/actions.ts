@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import { leadSchema, type Lead } from "@/lib/lead-schema";
 import { getLeadStorage } from "@/lib/lead-storage";
+import { requireMerchantIdentity } from "@/lib/legal";
 import { notifier, notifySafely } from "@/lib/server/notifications";
 import { createPilotCheckout, createSelfServiceCheckout } from "@/lib/server/stripe";
 import { hasAvailableProviderNumber } from "@/lib/server/provisioning";
@@ -23,6 +24,7 @@ export async function submitPilot(_: FormState, data: FormData): Promise<FormSta
   if (Date.now() - parsed.data.formStartedAt < 1500) return { success: false, message: "Formuläret skickades för snabbt. Vänta ett ögonblick och försök igen.", values: safeValues };
 
   try {
+    requireMerchantIdentity();
     const storage = getLeadStorage();
     const saved = await storage.save(parsed.data);
     await storage.update(saved.id, { provisioning_status: "awaiting_payment_method", updated_at: new Date().toISOString() });
