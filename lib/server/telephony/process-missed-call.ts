@@ -13,8 +13,8 @@ function dedupeMinutes(): number {
   return Number.isFinite(value) && value >= 1 && value <= 1440 ? Math.floor(value) : 60;
 }
 
-export function canProcessInactiveNumber(mode: SmsMode): boolean {
-  return mode === "dryrun" || mode === "log";
+export function canProcessInactiveNumber(mode: SmsMode, onboardingTestMode = false): boolean {
+  return onboardingTestMode || mode === "dryrun" || mode === "log";
 }
 
 export function renderMessage(template: string, businessName: string): string {
@@ -40,7 +40,7 @@ async function createIgnoredEvent(call: IncomingCall, reason: string, textbackNu
   }, { onConflict: "provider,provider_call_id", ignoreDuplicates: true });
 }
 
-async function deliverEvent(eventId: string, config: TextbackNumber, callerNumber: string, currentAttempts = 0) {
+async function deliverEvent(eventId: string, config: TextbackNumber, callerNumber: string, currentAttempts = 0, modeOverride?: SmsMode) {
   const supabase = getSupabaseAdmin();
   const attempt = currentAttempts + 1;
   await supabase.from("missed_call_events").update({
@@ -58,16 +58,27 @@ async function deliverEvent(eventId: string, config: TextbackNumber, callerNumbe
       to: callerNumber,
       message: renderMessage(config.sms_template, config.business_name),
       eventId,
+      modeOverride,
     });
+    const verifiedAt = new Date().toISOString();
     await supabase.from("missed_call_events").update({
       status: sms.mode === "log" ? "sms_logged" : sms.mode === "dryrun" ? "sms_logged" : "sms_sent",
       sms_provider_id: sms.providerId || null,
       provider_status: sms.providerStatus || null,
       sms_parts: sms.parts ?? null,
       sms_cost: sms.cost ?? null,
-      sms_sent_at: new Date().toISOString(),
+      sms_sent_at: verifiedAt,
       next_attempt_at: null,
     }).eq("id", eventId);
+
+    if (config.onboarding_test_mode && sms.mode === "dryrun") {
+      await supabase.from("textback_numbers").update({
+        forwarding_verified_at: verifiedAt,
+        caller_id_verified_at: verifiedAt,
+        outbound_sms_verified_at: verifiedAt,
+        updated_at: verifiedAt,
+      }).eq("id", config.id).eq("onboarding_test_mode", true);
+    }
     return { status: sms.mode === "live" ? "sms_sent" as const : "sms_logged" as const, eventId };
   } catch (error) {
     const code = error instanceof Error ? error.message.slice(0, 200) : "unknown_sms_error";
@@ -85,7 +96,7 @@ export async function retryMissedCallEvent(eventId: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("missed_call_events")
-    .select("id,status,sms_attempts,caller_number,textback_numbers(id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active)")
+    .select("id,status,sms_attempts,caller_number,textback_numbers(id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active,onboarding_test_mode)")
     .eq("id", eventId)
     .eq("status", "sms_retry_pending")
     .lte("next_attempt_at", new Date().toISOString())
@@ -105,7 +116,7 @@ export async function processMissedCall(call: IncomingCall) {
   }
   const { data: number, error: numberError } = await supabase
     .from("textback_numbers")
-    .select("id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active")
+    .select("id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active,onboarding_test_mode")
     .eq("provider", call.provider)
     .eq("provider_number", call.destinationNumber)
     .maybeSingle();
@@ -115,7 +126,8 @@ export async function processMissedCall(call: IncomingCall) {
     return { status: "ignored" as const, reason: "unknown_destination" };
   }
   const config = number as TextbackNumber;
-  if (!config.active && !canProcessInactiveNumber(getSmsMode())) {
+  const onboardingDryRun = !config.active && Boolean(config.onboarding_test_mode);
+  if (!config.active && !canProcessInactiveNumber(getSmsMode(), onboardingDryRun)) {
     await createIgnoredEvent(call, "inactive_destination", config.id);
     return { status: "ignored" as const, reason: "inactive_destination" };
   }
@@ -136,7 +148,7 @@ export async function processMissedCall(call: IncomingCall) {
     .maybeSingle();
   if (existing) {
     if (existing.status === "sms_retry_pending" && existing.next_attempt_at && new Date(existing.next_attempt_at) <= new Date()) {
-      return deliverEvent(existing.id, config, call.callerNumber, existing.sms_attempts || 0);
+      return deliverEvent(existing.id, config, call.callerNumber, existing.sms_attempts || 0, onboardingDryRun ? "dryrun" : undefined);
     }
     return { status: "duplicate_event" as const, eventId: existing.id };
   }
@@ -168,5 +180,5 @@ export async function processMissedCall(call: IncomingCall) {
     throw new Error("MISSED_CALL_EVENT_CREATE_FAILED");
   }
   if (recent?.length) return { status: "deduplicated" as const, eventId: event.id };
-  return deliverEvent(event.id, config, call.callerNumber);
+  return deliverEvent(event.id, config, call.callerNumber, 0, onboardingDryRun ? "dryrun" : undefined);
 }
