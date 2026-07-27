@@ -58,7 +58,7 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
   }
 
   if (state.success) {
-    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Intresset är registrerat</span><h2>Tack för er intresseanmälan.</h2><p>Vi har registrerat era uppgifter och återkommer när anslutningen öppnar. Ingen beställning eller betalning har genomförts.</p></div>;
+    return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Intresset är registrerat</span><h2>Tack för er intresseanmälan.</h2><p>Vi har registrerat era uppgifter och kontaktar er med nästa steg. Ingen beställning eller betalning har genomförts.</p></div>;
   }
 
   function begin() {
