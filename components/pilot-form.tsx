@@ -13,7 +13,7 @@ type FieldDefinition = readonly [FieldName, string, "text" | "email" | "tel" | "
 
 function SubmitButton({ ready }: { ready: boolean }) {
   const { pending } = useFormStatus();
-  return <button className="button large" disabled={pending || !ready}>{pending ? "Förbereder betalning…" : "Beställ Textback"}</button>;
+  return <button className="button large" disabled={pending || !ready}>{pending ? "Förbereder säker registrering…" : "Starta anslutningen"}</button>;
 }
 
 export function PilotForm() {
@@ -51,7 +51,7 @@ export function PilotForm() {
     }
   }, [state]);
 
-  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Beställningen är förberedd</span><h2>Öppnar säker betalning…</h2><p>Du skickas vidare till Stripe. Efter betalningen reserveras ett Textback-nummer automatiskt och du får en engångslänk för att skapa ditt portalkonto.</p>{state.checkoutUrl && <a className="button large" href={state.checkoutUrl}>Fortsätt till betalning</a>}</div>;
+  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Anslutningen är förberedd</span><h2>Öppnar Stripe…</h2><p>Du registrerar en betalmetod säkert hos Stripe, men debiteras inte nu. Ett Textback-nummer reserveras automatiskt och abonnemanget startar först när telefonin har klarat anslutningstesterna.</p>{state.checkoutUrl && <a className="button large" href={state.checkoutUrl}>Registrera betalmetod</a>}</div>;
 
   function begin() {
     if (!started) {
@@ -78,7 +78,7 @@ export function PilotForm() {
     {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
     <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Betalning sker säkert via Stripe.</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras.</p>
   </form>;
 }
 
