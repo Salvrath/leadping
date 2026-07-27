@@ -13,7 +13,7 @@ type FieldDefinition = readonly [FieldName, string, "text" | "email" | "tel" | "
 
 function SubmitButton({ ready }: { ready: boolean }) {
   const { pending } = useFormStatus();
-  return <button className="button large" disabled={pending || !ready}>{pending ? "Skickar…" : "Kontrollera min telefoni"}</button>;
+  return <button className="button large" disabled={pending || !ready}>{pending ? "Förbereder betalning…" : "Beställ Textback"}</button>;
 }
 
 export function PilotForm() {
@@ -42,11 +42,16 @@ export function PilotForm() {
     if (state.success && state.id && trackedLeadRef.current !== state.id) {
       trackedLeadRef.current = state.id;
       track("launch_enquiry_submitted", { lead_id: state.id });
+      if (state.checkoutUrl) track("pilot_checkout_started", { lead_id: state.id });
     }
     if (state.success || state.message || state.errors) statusRef.current?.focus();
+    if (state.success && state.checkoutUrl) {
+      const timer = window.setTimeout(() => window.location.assign(state.checkoutUrl!), 150);
+      return () => window.clearTimeout(timer);
+    }
   }, [state]);
 
-  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Uppgifterna är mottagna</span><h2>Vi kontrollerar er telefonilösning.</h2><p>En bekräftelse har skickats till den angivna e-postadressen. Vi återkommer normalt inom en arbetsdag med besked om kompatibilitet och nästa steg. Ingen betalning sker innan ni har bekräftat beställningen.</p></div>;
+  if (state.success) return <div className="success-card" role="status" tabIndex={-1} ref={statusRef}><CheckCircle2 size={42}/><span className="eyebrow">Beställningen är förberedd</span><h2>Öppnar säker betalning…</h2><p>Du skickas vidare till Stripe. Efter betalningen reserveras ett Textback-nummer automatiskt och du får en engångslänk för att skapa ditt portalkonto.</p>{state.checkoutUrl && <a className="button large" href={state.checkoutUrl}>Fortsätt till betalning</a>}</div>;
 
   function begin() {
     if (!started) {
@@ -73,7 +78,7 @@ export function PilotForm() {
     {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
     <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>Kostnadsfri kontroll. Ingen bindningstid och ingen betalning innan beställningen bekräftas.</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)}/><p className="fine" style={{color:"#64748b"}}>495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Betalning sker säkert via Stripe.</p>
   </form>;
 }
 
