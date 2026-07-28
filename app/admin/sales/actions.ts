@@ -8,6 +8,7 @@ import { adminActionError, adminActionSuccess, type AdminActionState } from "@/l
 import { salesLeadStatuses } from "@/lib/sales";
 import { requireAdmin } from "@/lib/server/admin-auth";
 import { auditEvent } from "@/lib/server/security";
+import { assertSalesOutboundEnabled } from "@/lib/server/sales-assistant";
 import {
   estimatedSmsCostOre,
   estimateSmsParts,
@@ -38,6 +39,7 @@ function errorMessage(error: unknown) {
     SALES_CAMPAIGN_EMPTY: "Kampanjen saknar mottagare.",
     SALES_LEAD_BLOCKED: "Kontakten är spärrad från fler utskick.",
     SALES_REPLY_EMPTY: "Skriv ett meddelande först.",
+    SALES_OUTBOUND_PAUSED: "All utgående försäljning är pausad.",
   };
   return messages[code] || "Åtgärden kunde inte genomföras. Kontrollera uppgifterna och försök igen.";
 }
@@ -152,6 +154,7 @@ export async function sendSalesCampaignWithFeedback(_previous: AdminActionState,
   requireAdmin();
   const campaignId = uuid.parse(String(formData.get("campaign_id") || ""));
   try {
+    const settings = await assertSalesOutboundEnabled();
     if (!isSalesSendWindow()) throw new Error("SALES_SEND_WINDOW_CLOSED");
     const db = getSupabaseAdmin();
     const { data: campaign, error } = await db.from("sales_campaigns")
@@ -197,8 +200,8 @@ export async function sendSalesCampaignWithFeedback(_previous: AdminActionState,
         const now = new Date().toISOString();
         await Promise.all([
           db.from("sales_messages").update({ provider_message_id: result.providerId || null, delivery_status: result.mode === "live" ? result.providerStatus || "sent" : "logged", sms_parts: result.parts || null, sms_cost: result.cost || null, sent_at: now }).eq("id", message.id),
-          db.from("sales_campaign_recipients").update({ status: result.mode === "live" ? "sent" : "sent", provider_message_id: result.providerId || null, sent_at: now, updated_at: now }).eq("id", recipient.id),
-          db.from("sales_leads").update({ status: lead.status === "follow_up" ? "contacted" : "contacted", outbound_count: lead.outbound_count + 1, first_contacted_at: lead.first_contacted_at || now, last_contacted_at: now, next_follow_up_at: lead.outbound_count === 0 ? new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString() : null, updated_at: now }).eq("id", lead.id),
+          db.from("sales_campaign_recipients").update({ status: "sent", provider_message_id: result.providerId || null, sent_at: now, updated_at: now }).eq("id", recipient.id),
+          db.from("sales_leads").update({ status: "contacted", outbound_count: lead.outbound_count + 1, first_contacted_at: lead.first_contacted_at || now, last_contacted_at: now, next_follow_up_at: lead.outbound_count === 0 ? new Date(Date.now() + settings.follow_up_after_days * 24 * 60 * 60_000).toISOString() : null, updated_at: now }).eq("id", lead.id),
         ]);
         return { sent: true, blocked: false };
       } catch (sendError) {
@@ -258,6 +261,7 @@ export async function updateSalesLeadWithFeedback(_previous: AdminActionState, f
 export async function sendSalesReplyWithFeedback(_previous: AdminActionState, formData: FormData): Promise<AdminActionState> {
   requireAdmin();
   try {
+    await assertSalesOutboundEnabled();
     const leadId = uuid.parse(String(formData.get("lead_id") || ""));
     const requestId = uuid.parse(String(formData.get("request_id") || ""));
     const body = z.string().min(1).max(1000).parse(String(formData.get("message") || "").trim());
