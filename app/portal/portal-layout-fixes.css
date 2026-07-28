@@ -1,0 +1,1 @@
+.portal-back{display:flex;width:max-content;max-width:100%;align-items:center;clear:both;margin-bottom:20px}.portal-back+.portal-kicker{display:flex;width:max-content;clear:both;margin-bottom:0}.portal-kicker+ .portal-title{clear:both}@media(max-width:620px){.portal-back{margin-bottom:18px}.portal-back+.portal-kicker{white-space:normal}}

@@ -8,6 +8,7 @@ import { activationReadiness, assertActivationStep } from "@/lib/server/company-
 import { hashCustomerPassword } from "@/lib/server/customer-auth";
 import { auditEvent, clearRateLimit, enforceRateLimit, isRateLimitExceededError } from "@/lib/server/security";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
+import { adminActionError, adminActionSuccess, type AdminActionState } from "@/lib/admin-action-state";
 import { z } from "zod";
 
 const uuid = z.string().uuid();
@@ -50,6 +51,15 @@ export async function updateConversationStatus(formData: FormData) {
   revalidatePath("/admin"); revalidatePath(`/admin/conversations/${id}`);
 }
 
+export async function updateConversationStatusWithFeedback(_previous: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  try {
+    await updateConversationStatus(formData);
+    return adminActionSuccess("Status sparad");
+  } catch {
+    return adminActionError("Statusen kunde inte sparas. Försök igen.");
+  }
+}
+
 export async function setTextbackNumberActive(formData: FormData) {
   requireAdmin();
   const id = uuid.parse(String(formData.get("id") || ""));
@@ -63,6 +73,19 @@ export async function setTextbackNumberActive(formData: FormData) {
   if (error || !data) throw new Error("NUMBER_UPDATE_FAILED");
   await auditEvent({ actor: adminActor, action: active ? "company.activated" : "company.paused", targetType: "textback_number", targetId: id });
   refreshCompany(id);
+}
+
+export async function setTextbackNumberActiveWithFeedback(_previous: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const activating = String(formData.get("active")) === "true";
+  try {
+    await setTextbackNumberActive(formData);
+    return adminActionSuccess(activating ? "Företaget aktiverat" : "Företaget pausat");
+  } catch (error) {
+    const message = error instanceof Error && error.message === "ACTIVATION_REQUIREMENTS_INCOMPLETE"
+      ? "Alla aktiveringskontroller måste vara klara först."
+      : "Statusen kunde inte ändras. Försök igen.";
+    return adminActionError(message);
+  }
 }
 
 export async function setCompanyActivationStep(formData: FormData) {
