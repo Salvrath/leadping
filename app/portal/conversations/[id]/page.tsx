@@ -1,17 +1,17 @@
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
-import { MessageSquareText, Phone, Send } from "lucide-react";
+import { MessageSquareText, Phone } from "lucide-react";
 import { requireCustomer } from "@/lib/server/customer-auth";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { getSmsMode } from "@/lib/server/telephony/elks";
-import { PortalHeader, StatusBadge, conversationStatuses, statusLabel } from "@/components/portal-ui";
-import { sendCustomerReply, updateCustomerConversationStatus } from "../../actions";
+import { PortalHeader, StatusBadge } from "@/components/portal-ui";
+import { CustomerReplyForm, StatusUpdateForm } from "@/components/portal-forms";
 
 export const dynamic = "force-dynamic";
 const fmt = (value?: string | null) => value ? new Intl.DateTimeFormat("sv-SE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "–";
 
-export default async function ConversationPage({ params, searchParams }: { params: { id: string }; searchParams: { error?: string } }) {
+export default async function ConversationPage({ params }: { params: { id: string } }) {
   const user = await requireCustomer();
   const db = getSupabaseAdmin();
   const { data: conversation } = await db.from("conversations")
@@ -23,10 +23,14 @@ export default async function ConversationPage({ params, searchParams }: { param
     .select("id,direction,body,delivery_status,failure_reason,created_at,sent_at,delivered_at")
     .eq("conversation_id", conversation.id).eq("textback_number_id", user.textback_number_id).order("created_at");
   const requestId = randomUUID();
-  const rateLimited = searchParams.error === "rate-limit";
   const smsMode = getSmsMode();
   const testMode = !number?.active && smsMode !== "live";
   const canSend = Boolean(number?.active || testMode);
+  const helperText = testMode
+    ? "Testet verifierar 46elks utan att leverera ett riktigt SMS."
+    : number?.active
+      ? "Svaret skickas från företagets Textback-nummer."
+      : "Tjänsten är pausad och kan inte skicka live-SMS.";
 
   return <main className="portal-page"><div className="portal-wrap">
     <PortalHeader businessName={number?.business_name} demoMode={number?.demo_mode} notificationsEnabled={number?.email_notifications_enabled}/>
@@ -34,15 +38,14 @@ export default async function ConversationPage({ params, searchParams }: { param
 
     <section className="portal-card portal-panel">
       <header className="portal-chat-head">
-        <div><div className="portal-kicker"><MessageSquareText size={15}/> Kundärende</div><h1 className="portal-title" style={{fontSize:"2.3rem"}}>{conversation.customer_number}</h1><p className="portal-muted">Senast aktiv {fmt(conversation.last_message_at)}</p></div>
+        <div><div className="portal-kicker"><MessageSquareText size={15}/> Kundärende</div><h1 className="portal-title portal-phone-title">{conversation.customer_number}</h1><p className="portal-muted">Senast aktiv {fmt(conversation.last_message_at)}</p></div>
         <div className="portal-chat-actions">
           <StatusBadge status={conversation.status}/>
-          <a className="portal-button" href={`tel:${conversation.customer_number}`}><Phone size={16}/> Ring kunden</a>
-          <form className="portal-status-form" action={updateCustomerConversationStatus}><input type="hidden" name="id" value={conversation.id}/><select name="status" defaultValue={conversation.status}>{conversationStatuses.map((status) => <option value={status} key={status}>{statusLabel(status)}</option>)}</select><button>Spara</button></form>
+          <a className="portal-button" href={`tel:${conversation.customer_number}`}><Phone size={16}/><span>Ring kunden</span></a>
+          <StatusUpdateForm id={conversation.id} status={conversation.status}/>
         </div>
       </header>
 
-      {rateLimited && <div className="portal-alert"><p><strong>För många SMS-försök.</strong><br/>Vänta fem minuter innan du försöker igen.</p></div>}
       {testMode && <div className="portal-alert info"><p><strong>Testläge är aktivt.</strong><br/>Svaret körs som 46elks dry-run och når inte kundens telefon.</p></div>}
 
       <div className="portal-messages" aria-label="Meddelanden">
@@ -53,17 +56,13 @@ export default async function ConversationPage({ params, searchParams }: { param
         </article>)}
       </div>
 
-      <form action={sendCustomerReply} className="portal-reply">
-        <input type="hidden" name="conversation_id" value={conversation.id}/>
-        <input type="hidden" name="request_id" value={requestId}/>
-        <label htmlFor="message" className="portal-field">{testMode ? "Testa svar via SMS" : "Svara kunden via SMS"}
-          <textarea id="message" name="message" required maxLength={1600} disabled={!canSend} placeholder="Skriv ett kort och tydligt svar..."/>
-        </label>
-        <div className="portal-reply-footer">
-          <small className="portal-muted">{testMode ? "Testet verifierar 46elks utan att leverera ett riktigt SMS." : number?.active ? "Svaret skickas från företagets Textback-nummer." : "Tjänsten är pausad och kan inte skicka live-SMS."}</small>
-          <button className="portal-button primary" disabled={!canSend}><Send size={16}/>{testMode ? "Kör SMS-test" : "Skicka SMS"}</button>
-        </div>
-      </form>
+      <CustomerReplyForm
+        conversationId={conversation.id}
+        initialRequestId={requestId}
+        canSend={canSend}
+        testMode={testMode}
+        helperText={helperText}
+      />
     </section>
   </div></main>;
 }
