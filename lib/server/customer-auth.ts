@@ -65,7 +65,7 @@ export async function requireCustomer() {
   if (!session) redirect("/portal/login");
   const db = getSupabaseAdmin();
   const { data, error } = await db.from("customer_users")
-    .select("id,email,textback_number_id,active,textback_numbers(id,business_name,provider_number,business_phone_numbers,sms_template,sms_sender,active)")
+    .select("id,email,textback_number_id,active,textback_numbers(id,business_name,provider_number,business_phone_numbers,sms_template,sms_sender,active,demo_mode,notification_email,email_notifications_enabled)")
     .eq("id", session.userId).eq("textback_number_id", session.numberId).eq("active", true).maybeSingle();
   if (error || !data) redirect("/portal/login");
 
