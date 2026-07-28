@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { BellRing, Building2, MessageSquareText, ShieldCheck, Sparkles } from "lucide-react";
+import { Building2, ShieldCheck } from "lucide-react";
 import { requireCustomer } from "@/lib/server/customer-auth";
 import { PortalHeader } from "@/components/portal-ui";
-import { updateCustomerSettings } from "../actions";
+import { CustomerSettingsForm } from "@/components/portal-forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Inställningar | Textback" };
@@ -20,29 +20,12 @@ export default async function SettingsPage() {
     <p className="portal-intro">Välj hur kunderna möts efter ett missat samtal och vart nya kundärenden ska skickas.</p>
 
     <div className="portal-grid">
-      <form action={updateCustomerSettings} className="portal-card portal-panel">
-        <div className="portal-section-label"><BellRing size={14}/> E-postnotiser</div>
-        <h2>Få ett mejl när ett nytt lead kommer in</h2>
-        <label className="portal-toggle">
-          <input type="checkbox" name="email_notifications_enabled" defaultChecked={Boolean(number?.email_notifications_enabled)}/>
-          <span><strong>Skicka e-postnotis för nya kundärenden</strong><span className="portal-muted">Mejlet innehåller kundens telefonnummer, meddelande och en direktlänk till konversationen.</span></span>
-        </label>
-        <label className="portal-field">E-postadress för notiser
-          <input type="email" name="notification_email" maxLength={320} defaultValue={notificationEmail} placeholder="namn@foretag.se"/>
-          <span className="portal-help">Adressen används endast för notifieringar från Textback.</span>
-        </label>
-
-        <div style={{height:1,background:"#edf2f4",margin:"26px 0"}}/>
-
-        <div className="portal-section-label"><MessageSquareText size={14}/> Automatiskt SMS</div>
-        <h2>Meddelandet kunden får</h2>
-        {number?.demo_mode && <div className="portal-alert info"><Sparkles size={19}/><p><strong>Demonumret använder en fast demotext.</strong><br/>Den publika demon skickar alltid Textbacks demonstrationsmeddelande och länk till webbplatsen.</p></div>}
-        <label className="portal-field">SMS-mall
-          <textarea name="sms_template" required minLength={10} maxLength={1000} defaultValue={number?.sms_template || ""} rows={7}/>
-          <span className="portal-help">Använd {"{{businessName}}"} för att infoga företagsnamnet automatiskt.</span>
-        </label>
-        <div className="portal-save-row"><button className="portal-button primary">Spara inställningar</button><span className="portal-muted">Ändringar gäller direkt.</span></div>
-      </form>
+      <CustomerSettingsForm
+        notificationsEnabled={Boolean(number?.email_notifications_enabled)}
+        notificationEmail={notificationEmail}
+        smsTemplate={number?.sms_template || ""}
+        demoMode={Boolean(number?.demo_mode)}
+      />
 
       <aside className="portal-stack">
         <section className="portal-card portal-panel">
