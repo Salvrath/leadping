@@ -9,7 +9,7 @@ import {
   updateCustomerConversationStatus,
   updateCustomerSettings,
 } from "@/app/portal/actions";
-import { conversationStatuses, statusLabel } from "@/components/portal-ui";
+import { conversationStatuses, statusLabel } from "@/lib/portal-status";
 import { initialPortalActionState, type PortalActionState } from "@/lib/portal-action-state";
 
 function useTransientSuccess(state: PortalActionState, duration = 3200) {
