@@ -150,7 +150,7 @@ export function salesDemoMessage(lead: { company_name: string; tracking_token: s
 }
 
 export function displayPhone(value: string) {
-  if (/^\+467\d{8}$/.test(value)) return `0${value.slice(3, 6)}-${value.slice(6, 9)} ${value.slice(9, 11)} ${value.slice(11)}`;
+  if (/^\+467\d{8}$/.test(value)) return `0${value.slice(3, 5)}-${value.slice(5, 8)} ${value.slice(8, 10)} ${value.slice(10)}`;
   return value;
 }
 
