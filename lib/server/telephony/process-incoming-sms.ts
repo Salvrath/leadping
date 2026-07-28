@@ -2,6 +2,7 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { notifier, notifySafely } from "@/lib/server/notifications";
 import { finalizeReadySelfServiceNumber } from "@/lib/server/provisioning";
+import { processSalesInboundSms } from "@/lib/server/sales-routing";
 import type { IncomingSms } from "./types";
 
 export async function processIncomingSms(sms: IncomingSms) {
@@ -19,6 +20,12 @@ export async function processIncomingSms(sms: IncomingSms) {
     .update({ inbound_sms_verified_at: now, updated_at: now })
     .eq("id", number.id).is("inbound_sms_verified_at", null);
   if (verificationError) throw new Error("INBOUND_SMS_VERIFICATION_UPDATE_FAILED");
+
+  const salesResult = await processSalesInboundSms(sms, number.id);
+  if (salesResult) {
+    await finalizeReadySelfServiceNumber(number.id);
+    return salesResult;
+  }
 
   const { data: existing, error: existingError } = await supabase.from("sms_messages")
     .select("id").eq("provider", sms.provider).eq("provider_message_id", sms.providerMessageId).maybeSingle();
