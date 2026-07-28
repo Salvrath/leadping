@@ -121,6 +121,7 @@ export async function runSalesAssistantWithFeedback(_previous: AdminActionState,
 
 export async function updateSalesAutomationSettingsWithFeedback(_previous: AdminActionState, formData: FormData): Promise<AdminActionState> {
   requireAdmin();
+  const db = getSupabaseAdmin();
   try {
     const settings = {
       paused: bool(formData, "paused"),
