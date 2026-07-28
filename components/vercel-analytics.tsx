@@ -1,5 +1,5 @@
-import Script from "next/script";
+import { Analytics } from "@vercel/analytics/next";
 
 export function VercelAnalytics() {
-  return <Script src="/_vercel/insights/script.js" strategy="afterInteractive" />;
+  return <Analytics />;
 }
