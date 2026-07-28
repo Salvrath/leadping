@@ -3,7 +3,7 @@ import { BellRing, Inbox, MessageSquareText, PhoneCall, Send, Sparkles } from "l
 import { requireCustomer } from "@/lib/server/customer-auth";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { PortalHeader, StatusBadge, conversationStatuses, statusLabel } from "@/components/portal-ui";
-import { updateCustomerConversationStatus } from "./actions";
+import { StatusUpdateForm } from "@/components/portal-forms";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Kundportal | Textback" };
@@ -66,7 +66,7 @@ export default async function PortalPage({ searchParams }: { searchParams?: { st
           <td><Link className="portal-customer-link" href={`/portal/conversations/${conversation.id}`}>{conversation.customer_number}</Link></td>
           <td><div className="portal-preview">{conversation.latest_inbound_preview || "Inget svar ännu"}</div></td>
           <td><StatusBadge status={conversation.status}/></td>
-          <td><form className="portal-status-form" action={updateCustomerConversationStatus}><input type="hidden" name="id" value={conversation.id}/><select name="status" defaultValue={conversation.status} aria-label={`Status för ${conversation.customer_number}`}>{conversationStatuses.map((status) => <option value={status} key={status}>{statusLabel(status)}</option>)}</select><button>Spara</button></form></td>
+          <td><StatusUpdateForm id={conversation.id} status={conversation.status}/></td>
         </tr>)}</tbody>
       </table></div>}
     </section>
