@@ -30,11 +30,11 @@ function Feedback({ state, visible }: { state: AdminActionState; visible: boolea
   return null;
 }
 
-function Submit({ idle, pending, success, successVisible, icon = "send", tone = "primary" }: { idle: string; pending: string; success: string; successVisible: boolean; icon?: "send" | "upload" | "check"; tone?: "primary" | "neutral" | "danger" }) {
+function Submit({ idle, pending, success, successVisible, icon = "send", tone = "primary", disabled = false }: { idle: string; pending: string; success: string; successVisible: boolean; icon?: "send" | "upload" | "check"; tone?: "primary" | "neutral" | "danger"; disabled?: boolean }) {
   const { pending: isPending } = useFormStatus();
   const Icon = icon === "upload" ? Upload : icon === "check" ? ShieldCheck : Send;
   const done = successVisible && !isPending;
-  return <button className={`admin-button ${tone} sales-submit${done ? " is-success" : ""}`} type="submit" disabled={isPending}>
+  return <button className={`admin-button ${tone} sales-submit${done ? " is-success" : ""}`} type="submit" disabled={disabled || isPending}>
     {isPending ? <LoaderCircle className="admin-spinner" size={16}/> : done ? <Check size={16}/> : <Icon size={16}/>}<span>{isPending ? pending : done ? success : idle}</span>
   </button>;
 }
@@ -66,7 +66,7 @@ export function SendSalesCampaignForm({ campaignId, disabled = false }: { campai
   const visible = useSuccess(state, 5000);
   return <form action={action} className="sales-send-panel">
     <input type="hidden" name="campaign_id" value={campaignId}/>
-    <Submit idle="Godkänn och skicka" pending="Skickar…" success="Utskicket är klart" successVisible={visible}/>
+    <Submit idle="Godkänn och skicka" pending="Skickar…" success="Utskicket är klart" successVisible={visible} disabled={disabled}/>
     {disabled && <span className="admin-inline-feedback error">Kampanjen kan inte skickas i nuvarande status.</span>}
     <Feedback state={state} visible={visible}/>
   </form>;
@@ -104,7 +104,7 @@ export function SalesReplyForm({ leadId, suggestion, disabled = false }: { leadI
     <input type="hidden" name="lead_id" value={leadId}/><input type="hidden" name="request_id" value={requestId}/>
     <div className="admin-section-head"><div><h2>Svara via SMS</h2><p>Förslaget är redigerbart och skickas först när du godkänner.</p></div></div>
     <label className="sales-field">Meddelande<textarea name="message" rows={5} required maxLength={1000} defaultValue={suggestion} disabled={disabled}/></label>
-    <div className="sales-form-footer"><Submit idle="Skicka SMS" pending="Skickar…" success="SMS skickat" successVisible={visible}/>{disabled && <span className="admin-inline-feedback error">Kontakten är spärrad.</span>}</div>
+    <div className="sales-form-footer"><Submit idle="Skicka SMS" pending="Skickar…" success="SMS skickat" successVisible={visible} disabled={disabled}/>{disabled && <span className="admin-inline-feedback error">Kontakten är spärrad.</span>}</div>
     <Feedback state={state} visible={visible}/>
   </form>;
 }
