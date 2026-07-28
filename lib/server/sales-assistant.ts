@@ -54,7 +54,7 @@ export type LeadEvaluation = {
 };
 
 export type SalesAssistantSummary = {
-  runId?: string;
+  runId: string;
   dryRun: boolean;
   paused: boolean;
   evaluated: number;
@@ -297,8 +297,7 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
     const dueFollowUps = evaluated.filter((item) => item.evaluation.followUpTemplate);
 
     if (!effectiveDryRun) {
-      const updates = evaluated.map(({ lead, evaluation }) => ({
-        id: lead.id,
+      const updateResults = await Promise.all(evaluated.map(({ lead, evaluation }) => db.from("sales_leads").update({
         verification_status: evaluation.verificationStatus,
         verification_reasons: evaluation.reasons,
         verified_by_system_at: evaluation.verificationStatus === "ready" ? now.toISOString() : null,
@@ -310,18 +309,16 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
         follow_up_suggested_at: evaluation.followUpSuggestedAt,
         status: evaluation.nextStatus,
         updated_at: now.toISOString(),
-      }));
-      if (updates.length) {
-        const { error } = await db.from("sales_leads").upsert(updates, { onConflict: "id" });
-        if (error) throw new Error("SALES_AUTOMATION_UPDATE_FAILED");
-      }
+      }).eq("id", lead.id)));
+      if (updateResults.some((result) => result.error)) throw new Error("SALES_AUTOMATION_UPDATE_FAILED");
     }
 
     const openIds = (openCampaigns || []).map((campaign) => campaign.id);
-    const { data: openRecipients } = openIds.length
+    const openRecipientResult = openIds.length
       ? await db.from("sales_campaign_recipients").select("sales_lead_id").in("campaign_id", openIds)
-      : { data: [] as { sales_lead_id: string }[] };
-    const alreadyQueued = new Set((openRecipients || []).map((item) => item.sales_lead_id));
+      : { data: [] as { sales_lead_id: string }[], error: null };
+    if (openRecipientResult.error) throw new Error("SALES_AUTOMATION_RECIPIENT_LOOKUP_FAILED");
+    const alreadyQueued = new Set((openRecipientResult.data || []).map((item) => item.sales_lead_id));
 
     const coldPool = evaluated
       .filter(({ lead, evaluation }) => evaluation.verificationStatus === "ready" && evaluation.nextStatus === "approved" && lead.outbound_count === 0 && !alreadyQueued.has(lead.id))
