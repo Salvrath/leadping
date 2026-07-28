@@ -1,6 +1,7 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { webhookBaseUrl } from "@/lib/site";
+import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { normalizePhoneNumber } from "./number";
 import type { IncomingCall, IncomingSms, SmsMode, SmsResult } from "./types";
 
@@ -68,7 +69,19 @@ export function getSmsMode(): SmsMode {
   return configured === "live" || configured === "dryrun" ? configured : "log";
 }
 
+async function enforceSalesPause(eventId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(eventId)) return;
+  const db = getSupabaseAdmin();
+  const { data: salesMessage, error: messageError } = await db.from("sales_messages").select("id").eq("id", eventId).maybeSingle();
+  if (messageError) throw new Error("SALES_PAUSE_CHECK_FAILED");
+  if (!salesMessage) return;
+  const { data: settings, error: settingsError } = await db.from("sales_automation_settings").select("paused").eq("id", true).maybeSingle();
+  if (settingsError) throw new Error("SALES_PAUSE_CHECK_FAILED");
+  if (settings?.paused) throw new Error("SALES_OUTBOUND_PAUSED");
+}
+
 export async function sendElksSms(input: { from: string; to: string; message: string; eventId: string; modeOverride?: SmsMode }): Promise<SmsResult> {
+  await enforceSalesPause(input.eventId);
   const mode = input.modeOverride || getSmsMode();
   if (mode === "log") {
     console.info("[textback:sms:log]", { to: input.to, from: input.from, eventId: input.eventId, length: input.message.length });
