@@ -43,7 +43,7 @@ describe("Sales Hub", () => {
   it("calculates multipart SMS conservatively", () => {
     expect(estimateSmsParts("Kort SMS")).toBe(1);
     expect(estimateSmsParts("A".repeat(161))).toBe(2);
-    expect(estimateSmsParts("🙂".repeat(71))).toBe(2);
+    expect(estimateSmsParts("🙂".repeat(71))).toBe(3);
   });
 
   it("limits cold sending to Swedish weekday business hours", () => {
