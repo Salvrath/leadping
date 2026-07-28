@@ -10,7 +10,7 @@ export async function processIncomingSms(sms: IncomingSms) {
   if (!sms.senderNumber || !sms.destinationNumber) return { status: "ignored" as const, reason: "invalid_number" };
 
   const { data: number, error: numberError } = await supabase
-    .from("textback_numbers").select("id,business_name,notification_email,email_notifications_enabled")
+    .from("textback_numbers").select("id,business_name,notification_email,email_notifications_enabled,demo_mode")
     .eq("provider", sms.provider).eq("provider_number", sms.destinationNumber).maybeSingle();
   if (numberError) throw new Error("TEXTBACK_NUMBER_LOOKUP_FAILED");
   if (!number) return { status: "ignored" as const, reason: "unknown_destination" };
@@ -21,10 +21,12 @@ export async function processIncomingSms(sms: IncomingSms) {
     .eq("id", number.id).is("inbound_sms_verified_at", null);
   if (verificationError) throw new Error("INBOUND_SMS_VERIFICATION_UPDATE_FAILED");
 
-  const salesResult = await processSalesInboundSms(sms, number.id);
-  if (salesResult) {
-    await finalizeReadySelfServiceNumber(number.id);
-    return salesResult;
+  if (number.demo_mode) {
+    const salesResult = await processSalesInboundSms(sms, number.id);
+    if (salesResult) {
+      await finalizeReadySelfServiceNumber(number.id);
+      return salesResult;
+    }
   }
 
   const { data: existing, error: existingError } = await supabase.from("sms_messages")
