@@ -7,11 +7,11 @@ import { initialAdminActionState, type AdminActionState } from "@/lib/admin-acti
 import { salesLeadStatuses, salesLeadStatusLabel } from "@/lib/sales";
 import {
   approveSalesLeadsWithFeedback,
-  importSalesLeadsWithFeedback,
   sendSalesCampaignWithFeedback,
   sendSalesReplyWithFeedback,
   updateSalesLeadWithFeedback,
 } from "@/app/admin/sales/actions";
+import { importSalesLeadsAssistedWithFeedback } from "@/app/admin/sales/automation/actions";
 
 function useSuccess(state: AdminActionState, duration = 3500) {
   const [visible, setVisible] = useState(false);
@@ -40,13 +40,17 @@ function Submit({ idle, pending, success, successVisible, icon = "send", tone = 
 }
 
 export function SalesImportForm() {
-  const [state, action] = useFormState(importSalesLeadsWithFeedback, initialAdminActionState);
-  const visible = useSuccess(state);
+  const [state, action] = useFormState(importSalesLeadsAssistedWithFeedback, initialAdminActionState);
+  const visible = useSuccess(state, 5000);
   return <form action={action} className="admin-card admin-section sales-form" encType="multipart/form-data">
-    <div className="admin-section-head"><div><h2>Importera leads</h2><p>Ladda upp CSV eller klistra in data. Dubbletter matchas på telefonnummer.</p></div></div>
+    <div className="admin-section-head"><div><h2>Importera och kontrollera leads</h2><p>Varje import sparas som en batch. Dubbletter stoppas och den automatiska verifieringskön körs direkt.</p></div></div>
+    <div className="sales-field-grid">
+      <label className="sales-field">Källa eller batchnamn<input name="source" required minLength={2} maxLength={100} defaultValue="ChatGPT leadresearch"/></label>
+      <label className="sales-field">Sökning eller urval, valfritt<input name="source_query" maxLength={1000} placeholder="Exempel: Svenska VVS- och elföretag med offentligt mobilnummer"/></label>
+    </div>
     <label className="sales-field">CSV-fil<input type="file" name="file" accept=".csv,text/csv"/></label>
     <label className="sales-field">Eller klistra in CSV<textarea name="csv" rows={12} placeholder="företagsnamn;mobilnummer;bolagsform;källa;verifierad;fitscore"/></label>
-    <div className="sales-form-footer"><Submit idle="Importera leads" pending="Importerar…" success="Importerade" successVisible={visible} icon="upload"/><span className="muted">Max 500 rader per import.</span></div>
+    <div className="sales-form-footer"><Submit idle="Importera och verifiera" pending="Importerar och kontrollerar…" success="Importen är klar" successVisible={visible} icon="upload"/><span className="muted">Max 500 rader. Inga SMS skickas.</span></div>
     <Feedback state={state} visible={visible}/>
   </form>;
 }
@@ -61,13 +65,13 @@ export function SalesApprovalForm({ children }: { children: ReactNode }) {
   </form>;
 }
 
-export function SendSalesCampaignForm({ campaignId, disabled = false }: { campaignId: string; disabled?: boolean }) {
+export function SendSalesCampaignForm({ campaignId, disabled = false, disabledReason }: { campaignId: string; disabled?: boolean; disabledReason?: string }) {
   const [state, action] = useFormState(sendSalesCampaignWithFeedback, initialAdminActionState);
   const visible = useSuccess(state, 5000);
   return <form action={action} className="sales-send-panel">
     <input type="hidden" name="campaign_id" value={campaignId}/>
     <Submit idle="Godkänn och skicka" pending="Skickar…" success="Utskicket är klart" successVisible={visible} disabled={disabled}/>
-    {disabled && <span className="admin-inline-feedback error">Kampanjen kan inte skickas i nuvarande status.</span>}
+    {disabled && <span className="admin-inline-feedback error">{disabledReason || "Kampanjen kan inte skickas i nuvarande status."}</span>}
     <Feedback state={state} visible={visible}/>
   </form>;
 }
@@ -90,7 +94,7 @@ export function SalesLeadEditor({ lead }: { lead: { id: string; status: string; 
   </form>;
 }
 
-export function SalesReplyForm({ leadId, suggestion, disabled = false }: { leadId: string; suggestion: string; disabled?: boolean }) {
+export function SalesReplyForm({ leadId, suggestion, disabled = false, disabledReason }: { leadId: string; suggestion: string; disabled?: boolean; disabledReason?: string }) {
   const [state, action] = useFormState(sendSalesReplyWithFeedback, initialAdminActionState);
   const visible = useSuccess(state);
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
@@ -104,7 +108,7 @@ export function SalesReplyForm({ leadId, suggestion, disabled = false }: { leadI
     <input type="hidden" name="lead_id" value={leadId}/><input type="hidden" name="request_id" value={requestId}/>
     <div className="admin-section-head"><div><h2>Svara via SMS</h2><p>Förslaget är redigerbart och skickas först när du godkänner.</p></div></div>
     <label className="sales-field">Meddelande<textarea name="message" rows={5} required maxLength={1000} defaultValue={suggestion} disabled={disabled}/></label>
-    <div className="sales-form-footer"><Submit idle="Skicka SMS" pending="Skickar…" success="SMS skickat" successVisible={visible} disabled={disabled}/>{disabled && <span className="admin-inline-feedback error">Kontakten är spärrad.</span>}</div>
+    <div className="sales-form-footer"><Submit idle="Skicka SMS" pending="Skickar…" success="SMS skickat" successVisible={visible} disabled={disabled}/>{disabled && <span className="admin-inline-feedback error">{disabledReason || "Kontakten är spärrad."}</span>}</div>
     <Feedback state={state} visible={visible}/>
   </form>;
 }
