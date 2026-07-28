@@ -33,10 +33,31 @@ export async function POST(request: Request) {
     messageUpdate.failure_reason = "provider_delivery_failed";
   }
 
-  const [{ error: eventError }, { error: messageError }] = await Promise.all([
+  const [{ error: eventError }, { error: messageError }, { error: salesMessageError }] = await Promise.all([
     db.from("missed_call_events").update(eventUpdate).eq("sms_provider_id", providerId),
     db.from("sms_messages").update(messageUpdate).eq("provider", "46elks").eq("provider_message_id", providerId),
+    db.from("sales_messages").update(messageUpdate).eq("provider", "46elks").eq("provider_message_id", providerId),
   ]);
-  if (eventError || messageError) console.error("[textback:telephony] delivery update failed", { providerStatus, eventError: Boolean(eventError), messageError: Boolean(messageError) });
+
+  const { data: recipient, error: recipientLookupError } = await db.from("sales_campaign_recipients")
+    .select("id,campaign_id,status").eq("provider_message_id", providerId).maybeSingle();
+  if (recipient) {
+    const recipientUpdate: Record<string, string | null> = { status: providerStatus, updated_at: new Date().toISOString() };
+    if (providerStatus === "delivered") recipientUpdate.delivered_at = messageUpdate.delivered_at || new Date().toISOString();
+    if (providerStatus === "failed") recipientUpdate.failure_reason = "provider_delivery_failed";
+    await db.from("sales_campaign_recipients").update(recipientUpdate).eq("id", recipient.id);
+    if (providerStatus === "delivered" && recipient.status !== "delivered") {
+      const { data: campaign } = await db.from("sales_campaigns").select("delivered_count").eq("id", recipient.campaign_id).maybeSingle();
+      if (campaign) await db.from("sales_campaigns").update({ delivered_count: campaign.delivered_count + 1, updated_at: new Date().toISOString() }).eq("id", recipient.campaign_id);
+    }
+  }
+
+  if (eventError || messageError || salesMessageError || recipientLookupError) console.error("[textback:telephony] delivery update failed", {
+    providerStatus,
+    eventError: Boolean(eventError),
+    messageError: Boolean(messageError),
+    salesMessageError: Boolean(salesMessageError),
+    recipientLookupError: Boolean(recipientLookupError),
+  });
   return new NextResponse(null, { status: 204 });
 }

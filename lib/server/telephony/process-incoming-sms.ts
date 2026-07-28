@@ -2,6 +2,7 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { notifier, notifySafely } from "@/lib/server/notifications";
 import { finalizeReadySelfServiceNumber } from "@/lib/server/provisioning";
+import { processSalesInboundSms } from "@/lib/server/sales-routing";
 import type { IncomingSms } from "./types";
 
 export async function processIncomingSms(sms: IncomingSms) {
@@ -9,7 +10,7 @@ export async function processIncomingSms(sms: IncomingSms) {
   if (!sms.senderNumber || !sms.destinationNumber) return { status: "ignored" as const, reason: "invalid_number" };
 
   const { data: number, error: numberError } = await supabase
-    .from("textback_numbers").select("id,business_name,notification_email,email_notifications_enabled")
+    .from("textback_numbers").select("id,business_name,notification_email,email_notifications_enabled,demo_mode")
     .eq("provider", sms.provider).eq("provider_number", sms.destinationNumber).maybeSingle();
   if (numberError) throw new Error("TEXTBACK_NUMBER_LOOKUP_FAILED");
   if (!number) return { status: "ignored" as const, reason: "unknown_destination" };
@@ -19,6 +20,14 @@ export async function processIncomingSms(sms: IncomingSms) {
     .update({ inbound_sms_verified_at: now, updated_at: now })
     .eq("id", number.id).is("inbound_sms_verified_at", null);
   if (verificationError) throw new Error("INBOUND_SMS_VERIFICATION_UPDATE_FAILED");
+
+  if (number.demo_mode) {
+    const salesResult = await processSalesInboundSms(sms, number.id);
+    if (salesResult) {
+      await finalizeReadySelfServiceNumber(number.id);
+      return salesResult;
+    }
+  }
 
   const { data: existing, error: existingError } = await supabase.from("sms_messages")
     .select("id").eq("provider", sms.provider).eq("provider_message_id", sms.providerMessageId).maybeSingle();

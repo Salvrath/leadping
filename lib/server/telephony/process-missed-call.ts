@@ -1,6 +1,8 @@
 import "server-only";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 import { finalizeReadySelfServiceNumber } from "@/lib/server/provisioning";
+import { matchSalesDemoCaller } from "@/lib/server/sales-routing";
+import { salesDemoMessage } from "@/lib/server/sales";
 import { normalizePhoneNumber, samePhoneNumber } from "./number";
 import { DEMO_SMS_MESSAGE, demoCooldownMinutes, demoDailyLimit } from "./demo-policy";
 import { getSmsMode, sendElksSms } from "./elks";
@@ -52,7 +54,7 @@ async function demoDailyLimitReached(config: TextbackNumber) {
   return (count || 0) >= demoDailyLimit();
 }
 
-async function deliverEvent(eventId: string, config: TextbackNumber, callerNumber: string, currentAttempts = 0, modeOverride?: SmsMode) {
+async function deliverEvent(eventId: string, config: TextbackNumber, callerNumber: string, currentAttempts = 0, modeOverride?: SmsMode, messageOverride?: string) {
   const supabase = getSupabaseAdmin();
   const attempt = currentAttempts + 1;
   await supabase.from("missed_call_events").update({
@@ -62,7 +64,7 @@ async function deliverEvent(eventId: string, config: TextbackNumber, callerNumbe
   const sender = normalizePhoneNumber(config.sms_sender || config.provider_number) || config.sms_sender || "Textback";
   try {
     const sms = await sendElksSms({
-      from: sender, to: callerNumber, message: outgoingMessage(config), eventId, modeOverride,
+      from: sender, to: callerNumber, message: messageOverride || outgoingMessage(config), eventId, modeOverride,
     });
     const verifiedAt = new Date().toISOString();
     await supabase.from("missed_call_events").update({
@@ -93,13 +95,15 @@ export async function retryMissedCallEvent(eventId: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("missed_call_events")
-    .select("id,status,sms_attempts,caller_number,textback_numbers(id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active,onboarding_test_mode,demo_mode)")
+    .select("id,status,sms_attempts,caller_number,sales_lead_id,sales_leads(company_name,tracking_token),textback_numbers(id,provider,provider_number,business_name,business_phone_numbers,sms_template,sms_sender,active,onboarding_test_mode,demo_mode)")
     .eq("id", eventId).eq("status", "sms_retry_pending").lte("next_attempt_at", new Date().toISOString()).maybeSingle();
   if (error) throw new Error("SMS_RETRY_LOOKUP_FAILED");
   if (!data || !data.caller_number || !data.textback_numbers) return { status: "not_retryable" as const };
   const config = Array.isArray(data.textback_numbers) ? data.textback_numbers[0] : data.textback_numbers;
   if (!config?.active) return { status: "not_retryable" as const };
-  return deliverEvent(data.id, config as TextbackNumber, data.caller_number, data.sms_attempts || 0);
+  const lead = Array.isArray(data.sales_leads) ? data.sales_leads[0] : data.sales_leads;
+  const messageOverride = lead ? salesDemoMessage(lead) : undefined;
+  return deliverEvent(data.id, config as TextbackNumber, data.caller_number, data.sms_attempts || 0, undefined, messageOverride);
 }
 
 export async function processMissedCall(call: IncomingCall) {
@@ -132,11 +136,14 @@ export async function processMissedCall(call: IncomingCall) {
     return { status: "ignored" as const, reason: "business_own_number" };
   }
 
+  const salesLead = config.demo_mode ? await matchSalesDemoCaller(call.callerNumber) : null;
+  const messageOverride = salesLead ? salesDemoMessage(salesLead) : undefined;
+
   const { data: existing } = await supabase.from("missed_call_events")
     .select("id,status,sms_attempts,next_attempt_at").eq("provider", call.provider).eq("provider_call_id", call.providerCallId).maybeSingle();
   if (existing) {
     if (existing.status === "sms_retry_pending" && existing.next_attempt_at && new Date(existing.next_attempt_at) <= new Date()) {
-      return deliverEvent(existing.id, config, call.callerNumber, existing.sms_attempts || 0, onboardingDryRun ? "dryrun" : undefined);
+      return deliverEvent(existing.id, config, call.callerNumber, existing.sms_attempts || 0, onboardingDryRun ? "dryrun" : undefined, messageOverride);
     }
     return { status: "duplicate_event" as const, eventId: existing.id };
   }
@@ -157,6 +164,7 @@ export async function processMissedCall(call: IncomingCall) {
   const { data: event, error: insertError } = await supabase.from("missed_call_events").insert({
     provider: call.provider, provider_call_id: call.providerCallId, textback_number_id: config.id,
     caller_number: call.callerNumber, destination_number: call.destinationNumber, status,
+    sales_lead_id: salesLead?.id || null,
     reason: recent?.length ? (config.demo_mode ? "demo_caller_cooldown" : "caller_recently_contacted") : null, raw_event: call.raw,
   }).select("id").single();
   if (insertError || !event) {
@@ -164,5 +172,5 @@ export async function processMissedCall(call: IncomingCall) {
     throw new Error("MISSED_CALL_EVENT_CREATE_FAILED");
   }
   if (recent?.length) return { status: "deduplicated" as const, eventId: event.id };
-  return deliverEvent(event.id, config, call.callerNumber, 0, onboardingDryRun ? "dryrun" : undefined);
+  return deliverEvent(event.id, config, call.callerNumber, 0, onboardingDryRun ? "dryrun" : undefined, messageOverride);
 }
