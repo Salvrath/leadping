@@ -1,13 +1,10 @@
 import Link from "next/link";
 import { Bell, Settings } from "lucide-react";
 import { CustomerLogoutForm } from "@/components/portal-forms";
+import { conversationStatuses, statusLabel, type ConversationStatus } from "@/lib/portal-status";
 
-export const conversationStatuses = ["new", "open", "contacted", "closed"] as const;
-export type ConversationStatus = typeof conversationStatuses[number];
-
-export function statusLabel(status: string) {
-  return ({ new: "Nytt", open: "Pågående", contacted: "Kontaktad", closed: "Avslutad" } as Record<string, string>)[status] || status;
-}
+export { conversationStatuses, statusLabel };
+export type { ConversationStatus };
 
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`portal-badge ${status}`}>{statusLabel(status)}</span>;
