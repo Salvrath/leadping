@@ -1,5 +1,6 @@
 import "server-only";
 import type { Lead } from "../lead-schema";
+import { siteUrl } from "../site";
 import { customerApplicationEmail, internalApplicationEmail, TEXTBACK_CONTACT_EMAIL } from "./notification-templates";
 
 export interface Notifier {
@@ -7,12 +8,16 @@ export interface Notifier {
   payment(company: string, id: string, paidAt: string): Promise<void>;
   onboarding(input: { email: string; company: string; providerNumber: string; setupUrl: string; leadId: string }): Promise<void>;
   capacity(input: { email: string; company: string; leadId: string }): Promise<void>;
+  newLead(input: { email: string; businessName: string; customerNumber: string; message: string; conversationId: string; messageId: string }): Promise<void>;
 }
 
 type EmailInput = { to: string; replyTo: string; subject: string; text: string; html?: string; idempotencyKey: string };
 
-function configured() {
-  return Boolean(process.env.RESEND_API_KEY && process.env.TEXTBACK_NOTIFICATION_EMAIL && process.env.TEXTBACK_FROM_EMAIL);
+function emailDeliveryConfigured() {
+  return Boolean(process.env.RESEND_API_KEY && process.env.TEXTBACK_FROM_EMAIL);
+}
+function internalNotificationsConfigured() {
+  return Boolean(emailDeliveryConfigured() && process.env.TEXTBACK_NOTIFICATION_EMAIL);
 }
 function fromAddress() { return process.env.TEXTBACK_FROM_EMAIL || `Textback <${TEXTBACK_CONTACT_EMAIL}>`; }
 function escapeHtml(value: string) {
@@ -38,16 +43,19 @@ async function sendEmail(input: EmailInput) {
 }
 
 async function sendApplicationEmails(lead: Lead, id: string) {
-  if (!configured()) {
+  if (!emailDeliveryConfigured()) {
     if (process.env.NODE_ENV === "production") console.error("[notifications] email configuration missing", { kind: "application" });
     return;
   }
   const customer = customerApplicationEmail(lead, id);
   const internal = internalApplicationEmail(lead, id);
-  const results = await Promise.allSettled([
+  const tasks = [
     sendEmail({ to: lead.email, replyTo: TEXTBACK_CONTACT_EMAIL, subject: customer.subject, text: customer.text, html: customer.html, idempotencyKey: `pilot-confirmation/${id}` }),
-    sendEmail({ to: process.env.TEXTBACK_NOTIFICATION_EMAIL!, replyTo: lead.email, subject: internal.subject, text: internal.text, idempotencyKey: `pilot-internal/${id}` }),
-  ]);
+  ];
+  if (process.env.TEXTBACK_NOTIFICATION_EMAIL) {
+    tasks.push(sendEmail({ to: process.env.TEXTBACK_NOTIFICATION_EMAIL, replyTo: lead.email, subject: internal.subject, text: internal.text, idempotencyKey: `pilot-internal/${id}` }));
+  }
+  const results = await Promise.allSettled(tasks);
   const failures = results.filter((result) => result.status === "rejected");
   if (failures.length) throw new Error(`APPLICATION_EMAIL_DELIVERY_FAILED_${failures.length}`);
 }
@@ -55,7 +63,7 @@ async function sendApplicationEmails(lead: Lead, id: string) {
 export const notifier: Notifier = {
   application: sendApplicationEmails,
   async payment(company, id, paidAt) {
-    if (!configured()) return;
+    if (!internalNotificationsConfigured()) return;
     const safeCompany = String(company).replace(/[<>]/g, "").slice(0, 200);
     await sendEmail({
       to: process.env.TEXTBACK_NOTIFICATION_EMAIL!, replyTo: TEXTBACK_CONTACT_EMAIL,
@@ -65,7 +73,7 @@ export const notifier: Notifier = {
     });
   },
   async onboarding({ email, company, providerNumber, setupUrl, leadId }) {
-    if (!configured()) throw new Error("EMAIL_NOT_CONFIGURED");
+    if (!emailDeliveryConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
     const safeCompany = escapeHtml(company.slice(0, 200));
     const safeNumber = escapeHtml(providerNumber);
     const safeUrl = escapeHtml(setupUrl);
@@ -77,7 +85,7 @@ export const notifier: Notifier = {
     });
   },
   async capacity({ email, company, leadId }) {
-    if (!configured()) return;
+    if (!internalNotificationsConfigured()) return;
     await sendEmail({
       to: process.env.TEXTBACK_NOTIFICATION_EMAIL!, replyTo: email,
       subject: `Nummerpoolen är tom: ${company.slice(0, 160)}`,
@@ -85,9 +93,25 @@ export const notifier: Notifier = {
       idempotencyKey: `provider-capacity/${leadId}`,
     });
   },
+  async newLead({ email, businessName, customerNumber, message, conversationId, messageId }) {
+    if (!emailDeliveryConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
+    const conversationUrl = `${siteUrl}/portal/conversations/${conversationId}`;
+    const safeBusiness = escapeHtml(businessName.slice(0, 200));
+    const safeNumber = escapeHtml(customerNumber.slice(0, 80));
+    const safeMessage = escapeHtml(message.slice(0, 2000)).replaceAll("\n", "<br/>");
+    const safeUrl = escapeHtml(conversationUrl);
+    await sendEmail({
+      to: email,
+      replyTo: TEXTBACK_CONTACT_EMAIL,
+      subject: `Nytt kundärende till ${businessName.slice(0, 120)}`,
+      text: `Ett nytt kundärende har kommit in via Textback.\n\nTelefonnummer: ${customerNumber}\n\nKundens meddelande:\n${message}\n\nÖppna ärendet:\n${conversationUrl}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:620px"><p style="color:#176b87;font-weight:700;text-transform:uppercase;letter-spacing:.08em">Nytt kundärende</p><h1 style="color:#10243e">${safeBusiness}</h1><p><strong>Telefonnummer:</strong> ${safeNumber}</p><div style="background:#f4f7fb;border-radius:12px;padding:18px;margin:20px 0"><strong>Kundens meddelande</strong><p style="margin:8px 0 0">${safeMessage}</p></div><p><a href="${safeUrl}" style="display:inline-block;background:#176b87;color:white;text-decoration:none;padding:12px 18px;border-radius:9px;font-weight:700">Öppna i Textback</a></p></div>`,
+      idempotencyKey: `new-lead/${messageId}`,
+    });
+  },
 };
 
-export async function notifySafely(task: () => Promise<void>, kind: "application" | "payment" | "onboarding" | "capacity") {
+export async function notifySafely(task: () => Promise<void>, kind: "application" | "payment" | "onboarding" | "capacity" | "new-lead") {
   try { await task(); }
   catch (error) { console.error("[notifications] delivery failed", { kind, code: error instanceof Error ? error.message : "UNKNOWN" }); }
 }
