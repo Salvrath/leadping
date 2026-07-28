@@ -133,10 +133,25 @@ export async function sendCustomerReply(formData: FormData) {
 export async function updateCustomerSettings(formData: FormData) {
   const customer = await requireCustomer();
   const template = String(formData.get("sms_template") || "").trim();
+  const notificationEmail = String(formData.get("notification_email") || "").trim().toLowerCase();
+  const emailNotificationsEnabled = formData.get("email_notifications_enabled") === "on";
   if (template.length < 10 || template.length > 1000) throw new Error("INVALID_SMS_TEMPLATE");
-  const { data, error } = await getSupabaseAdmin().from("textback_numbers").update({ sms_template: template, updated_at: new Date().toISOString() })
-    .eq("id", customer.textback_number_id).select("id").maybeSingle();
+  if (notificationEmail && !z.string().email().max(320).safeParse(notificationEmail).success) throw new Error("INVALID_NOTIFICATION_EMAIL");
+  if (emailNotificationsEnabled && !notificationEmail) throw new Error("NOTIFICATION_EMAIL_REQUIRED");
+
+  const { data, error } = await getSupabaseAdmin().from("textback_numbers").update({
+    sms_template: template,
+    notification_email: notificationEmail || null,
+    email_notifications_enabled: emailNotificationsEnabled,
+    updated_at: new Date().toISOString(),
+  }).eq("id", customer.textback_number_id).select("id").maybeSingle();
   if (error || !data) throw new Error("SETTINGS_UPDATE_FAILED");
-  await auditEvent({ actor: { type: "customer", id: customer.id }, action: "company.sms_template_updated", targetType: "textback_number", targetId: customer.textback_number_id });
+  await auditEvent({
+    actor: { type: "customer", id: customer.id },
+    action: "company.settings_updated",
+    targetType: "textback_number",
+    targetId: customer.textback_number_id,
+    metadata: { email_notifications_enabled: emailNotificationsEnabled },
+  });
   revalidatePath("/portal"); revalidatePath("/portal/settings");
 }
