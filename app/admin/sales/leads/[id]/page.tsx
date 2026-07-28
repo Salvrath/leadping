@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Building2, ExternalLink, Inbox, MousePointerClick, Phone, PhoneCall, Send } from "lucide-react";
+import { Bot, Building2, ExternalLink, Inbox, MousePointerClick, PauseCircle, Phone, PhoneCall, Send } from "lucide-react";
 import { SalesLeadEditor, SalesReplyForm } from "@/components/sales-actions";
 import { AdminHeader, AdminStatusBadge } from "@/components/admin-ui";
 import { salesReplyClassificationLabels } from "@/lib/sales";
 import { requireAdmin } from "@/lib/server/admin-auth";
+import { getSalesAutomationSettings } from "@/lib/server/sales-assistant";
 import { suggestedSalesReply } from "@/lib/server/sales";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 
@@ -15,7 +16,8 @@ const fmt = (value?: string | null) => value ? new Intl.DateTimeFormat("sv-SE", 
 export default async function SalesLeadPage({ params }: { params: { id: string } }) {
   requireAdmin();
   const db = getSupabaseAdmin();
-  const [{ data: lead, error }, { data: messages }, { data: calls }, { data: recipients }] = await Promise.all([
+  const [settings, { data: lead, error }, { data: messages }, { data: calls }, { data: recipients }] = await Promise.all([
+    getSalesAutomationSettings(),
     db.from("sales_leads").select("*").eq("id", params.id).maybeSingle(),
     db.from("sales_messages").select("id,direction,body,classification,suggested_reply,delivery_status,failure_reason,created_at,sent_at,delivered_at").eq("sales_lead_id", params.id).order("created_at"),
     db.from("missed_call_events").select("id,status,created_at,sms_delivered_at").eq("sales_lead_id", params.id).order("created_at", { ascending: false }).limit(20),
@@ -25,6 +27,7 @@ export default async function SalesLeadPage({ params }: { params: { id: string }
   const inbound = [...(messages || [])].reverse().find((message) => message.direction === "inbound");
   const classification = (inbound?.classification || lead.reply_classification || "question") as Parameters<typeof suggestedSalesReply>[0];
   const suggestion = inbound ? inbound.suggested_reply || suggestedSalesReply(classification, lead.company_name) : "";
+  const replyDisabled = lead.do_not_contact || settings.paused;
 
   return <main className="admin-page"><div className="admin-wrap sales-narrow-wide">
     <AdminHeader salesAttention={lead.status === "replied" || lead.status === "interested" ? 1 : 0}/>
@@ -33,6 +36,9 @@ export default async function SalesLeadPage({ params }: { params: { id: string }
       <div><div className="admin-kicker"><Building2 size={15}/> Säljlead</div><h1 className="admin-title">{lead.company_name}</h1><p className="admin-intro">{[lead.industry,lead.city].filter(Boolean).join(" · ") || "Bransch och ort saknas"}</p></div>
       <div className="sales-lead-actions"><AdminStatusBadge status={lead.do_not_contact ? "blocked" : lead.status}/><a className="admin-button neutral" href={`tel:${lead.phone_number}`}><Phone size={16}/> Ring</a>{lead.source_url && <a className="admin-button neutral" href={lead.source_url} target="_blank" rel="noreferrer"><ExternalLink size={16}/> Källa</a>}</div>
     </section>
+
+    {settings.paused && <div className="admin-note warning"><PauseCircle size={16}/><strong>Global paus är aktiv.</strong> Du kan granska leadet men inte skicka säljsms.</div>}
+    {lead.recommended_action && <section className="admin-card admin-section sales-recommendation"><div><div className="admin-kicker"><Bot size={14}/> Assistentens rekommendation</div><h2>{lead.recommended_action}</h2><p>{lead.recommendation_reason || "Ingen motivering sparad."}</p></div><div className="sales-recommendation-score"><strong>{lead.automation_score || 0}</strong><span>prioritet</span></div></section>}
 
     <section className="sales-summary-grid sales-lead-summary">
       <article className="admin-card"><Phone size={20}/><strong>{lead.phone_number}</strong><span>Kontakttelefon</span></article>
@@ -49,6 +55,8 @@ export default async function SalesLeadPage({ params }: { params: { id: string }
           <div><dt>Bolagsform</dt><dd>{lead.company_type === "aktiebolag" ? "Aktiebolag" : lead.company_type}</dd></div>
           <div><dt>Kontaktperson</dt><dd>{lead.contact_name || "–"}</dd></div>
           <div><dt>Källa verifierad</dt><dd>{fmt(lead.verified_at)}</dd></div>
+          <div><dt>Automatisk kontroll</dt><dd><AdminStatusBadge status={lead.verification_status || "pending"}/></dd></div>
+          <div><dt>Kontrollanmärkningar</dt><dd>{(lead.verification_reasons || []).join(" ") || "Inga"}</dd></div>
           <div><dt>Produktpassning</dt><dd>{lead.fit_score}/100</dd></div>
           <div><dt>Motivering</dt><dd>{lead.fit_reason || "–"}</dd></div>
           <div><dt>Första kontakt</dt><dd>{fmt(lead.first_contacted_at)}</dd></div>
@@ -68,6 +76,6 @@ export default async function SalesLeadPage({ params }: { params: { id: string }
       </div>}
     </section>
 
-    {inbound && <SalesReplyForm leadId={lead.id} suggestion={suggestion} disabled={lead.do_not_contact}/>} 
+    {inbound && <SalesReplyForm leadId={lead.id} suggestion={suggestion} disabled={replyDisabled} disabledReason={settings.paused ? "Global paus är aktiv." : undefined}/>} 
   </div></main>;
 }
