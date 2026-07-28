@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./interaction-feedback.css";
 import { CookieBanner } from "@/components/cookie-banner";
 import { PageTracker } from "@/components/page-tracker";
 import { GoogleTagManager } from "@/components/gtm";
