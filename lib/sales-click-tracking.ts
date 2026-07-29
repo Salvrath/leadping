@@ -1,0 +1,18 @@
+export const salesTrackingTokenPattern = /^[0-9a-f-]{36}$/i;
+
+const scannerPattern = /(bot|crawler|spider|preview|prefetch|safebrowsing|urlscan|linkcheck|linkexpander|facebookexternalhit|whatsapp|slackbot|telegrambot|discordbot|skypeuripreview|proofpoint|barracuda|mimecast|symantec|trendmicro|googleimageproxy|outlook|office existence discovery)/i;
+
+export function isValidSalesTrackingToken(token: string) {
+  return salesTrackingTokenPattern.test(token);
+}
+
+export function isLikelyLinkScanner(input: {
+  userAgent?: string | null;
+  secFetchDest?: string | null;
+  secFetchUser?: string | null;
+}) {
+  const userAgent = input.userAgent || "";
+  if (scannerPattern.test(userAgent)) return true;
+  if (input.secFetchDest && !["document", "empty"].includes(input.secFetchDest)) return true;
+  return input.secFetchUser !== "?1" && scannerPattern.test(`${userAgent} preview`);
+}
