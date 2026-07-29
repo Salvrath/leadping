@@ -156,8 +156,8 @@ export async function refreshEmailCampaignStats(campaignId: string) {
     delivered_count: count(["delivered", "clicked", "replied"]),
     clicked_count: count(["clicked", "replied"]),
     replied_count: count(["replied"]),
-    bounced_count: count(["bounced"]),
-    failed_count: count(["failed", "blocked", "skipped"]),
+    bounced_count: count(["bounced", "complained"]),
+    failed_count: count(["failed", "blocked", "skipped", "complained"]),
     updated_at: new Date().toISOString(),
   }).eq("id", campaignId);
 }
