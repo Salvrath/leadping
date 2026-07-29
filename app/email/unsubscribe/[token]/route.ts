@@ -3,8 +3,14 @@ import { getSupabaseAdmin } from "@/lib/server/supabase";
 
 const tokenPattern = /^[0-9a-f-]{36}$/i;
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+}
+
 function page(title: string, text: string, form = false) {
-  return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title}</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f4ee;color:#10243e;font-family:Arial,sans-serif}.card{width:min(92vw,520px);padding:42px 32px;text-align:center;background:#fff;border:1px solid #dbe4e8;border-radius:20px;box-shadow:0 20px 60px rgba(16,36,62,.12)}img{width:180px;height:auto;margin-bottom:24px}h1{font-size:1.8rem;margin:0 0 12px}p{color:#526277;line-height:1.55;margin:0 0 22px}button,a{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;padding:13px 18px;background:#176b87;color:#fff;text-decoration:none;font-weight:700;cursor:pointer}</style></head><body><main class="card"><img src="/textback-logo.svg" alt="Textback"><h1>${title}</h1><p>${text}</p>${form ? '<form method="post"><button type="submit">Avregistrera e-postadressen</button></form>' : '<a href="/">Till Textback</a>'}</main></body></html>`;
+  const safeTitle = escapeHtml(title);
+  const safeText = escapeHtml(text);
+  return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${safeTitle}</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f4ee;color:#10243e;font-family:Arial,sans-serif}.card{width:min(92vw,520px);padding:42px 32px;text-align:center;background:#fff;border:1px solid #dbe4e8;border-radius:20px;box-shadow:0 20px 60px rgba(16,36,62,.12)}img{width:180px;height:auto;margin-bottom:24px}h1{font-size:1.8rem;margin:0 0 12px}p{color:#526277;line-height:1.55;margin:0 0 22px}button,a{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:10px;padding:13px 18px;background:#176b87;color:#fff;text-decoration:none;font-weight:700;cursor:pointer}</style></head><body><main class="card"><img src="/textback-logo.svg" alt="Textback"><h1>${safeTitle}</h1><p>${safeText}</p>${form ? '<form method="post"><button type="submit">Avregistrera e-postadressen</button></form>' : '<a href="/">Till Textback</a>'}</main></body></html>`;
 }
 
 async function unsubscribe(token: string) {
