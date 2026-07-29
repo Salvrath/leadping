@@ -9,6 +9,8 @@ export async function GET(request: Request, { params }: { params: { token: strin
   const token = params.token;
   if (!isValidSalesTrackingToken(token)) return NextResponse.redirect(`${siteUrl}/`);
 
+  const secFetchUser = request.headers.get("sec-fetch-user");
+  const userNavigation = secFetchUser === "?1";
   const db = getSupabaseAdmin();
   const { data: lead } = await db.from("sales_leads").select("id").eq("tracking_token", token).maybeSingle();
   if (lead) {
@@ -20,7 +22,8 @@ export async function GET(request: Request, { params }: { params: { token: strin
       user_agent: userAgent?.slice(0, 500) || null,
       suspected_scanner: isLikelyLinkScanner({ userAgent, secFetchDest }),
       request_metadata: {
-        sec_fetch_user: request.headers.get("sec-fetch-user"),
+        user_navigation: userNavigation,
+        sec_fetch_user: secFetchUser,
         sec_fetch_site: request.headers.get("sec-fetch-site"),
         sec_fetch_mode: request.headers.get("sec-fetch-mode"),
         sec_fetch_dest: secFetchDest,
@@ -30,7 +33,7 @@ export async function GET(request: Request, { params }: { params: { token: strin
   }
 
   const html = `<!doctype html>
-<html lang="sv" data-sales-token="${token}">
+<html lang="sv" data-sales-token="${token}" data-user-navigation="${userNavigation}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
