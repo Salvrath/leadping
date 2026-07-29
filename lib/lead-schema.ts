@@ -11,6 +11,14 @@ const attribution = z
   .optional()
   .transform((value) => value || undefined);
 
+const clickIdentifier = z
+  .string()
+  .trim()
+  .max(200)
+  .regex(/^[A-Za-z0-9._~-]*$/, "Ogiltigt klick-ID")
+  .optional()
+  .transform((value) => value || undefined);
+
 export const leadSchema = z.object({
   company: text("företagsnamn", 160),
   contact: text("kontaktperson", 120),
@@ -32,6 +40,9 @@ export const leadSchema = z.object({
   utmCampaign: attribution,
   utmContent: attribution,
   utmTerm: attribution,
+  gclid: clickIdentifier,
+  gbraid: clickIdentifier,
+  wbraid: clickIdentifier,
   landingPath: z.string().trim().max(500).startsWith("/").optional(),
   referrer: z.string().trim().url().max(500).optional().or(z.literal("")),
 });
