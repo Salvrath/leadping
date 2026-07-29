@@ -1,22 +1,36 @@
 import { NextResponse } from "next/server";
+import { isLikelyLinkScanner, isValidSalesTrackingToken } from "@/lib/sales-click-tracking";
 import { siteUrl } from "@/lib/site";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { token: string } }) {
+export async function GET(request: Request, { params }: { params: { token: string } }) {
   const token = params.token;
-  if (!/^[0-9a-f-]{36}$/i.test(token)) return NextResponse.redirect(`${siteUrl}/`);
+  if (!isValidSalesTrackingToken(token)) return NextResponse.redirect(`${siteUrl}/`);
+
   const db = getSupabaseAdmin();
-  const { data: lead } = await db.from("sales_leads").select("id,status,do_not_contact").eq("tracking_token", token).maybeSingle();
+  const { data: lead } = await db.from("sales_leads").select("id").eq("tracking_token", token).maybeSingle();
   if (lead) {
-    const keepStatus = ["interested", "converted", "blocked"].includes(lead.status);
-    await db.from("sales_leads").update({
-      website_clicked_at: new Date().toISOString(),
-      status: keepStatus || lead.do_not_contact ? lead.status : "engaged",
-      next_follow_up_at: lead.do_not_contact ? null : new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq("id", lead.id);
+    const userAgent = request.headers.get("user-agent");
+    const secFetchDest = request.headers.get("sec-fetch-dest");
+    await db.from("sales_tracking_events").insert({
+      sales_lead_id: lead.id,
+      event_type: "request",
+      user_agent: userAgent?.slice(0, 500) || null,
+      suspected_scanner: isLikelyLinkScanner({ userAgent, secFetchDest }),
+      request_metadata: {
+        sec_fetch_user: request.headers.get("sec-fetch-user"),
+        sec_fetch_site: request.headers.get("sec-fetch-site"),
+        sec_fetch_mode: request.headers.get("sec-fetch-mode"),
+        sec_fetch_dest: secFetchDest,
+        accept: request.headers.get("accept")?.slice(0, 500) || null,
+      },
+    });
   }
-  return NextResponse.redirect(`${siteUrl}/#intresse`, 302);
+
+  const destination = new URL(siteUrl);
+  destination.searchParams.set("tb", token);
+  destination.hash = "ansok";
+  return NextResponse.redirect(destination, 302);
 }
