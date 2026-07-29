@@ -1,5 +1,6 @@
 (() => {
   const token = document.documentElement.dataset.salesToken || "";
+  const emailRecipientToken = document.documentElement.dataset.emailRecipientToken || "";
   const userNavigation = document.documentElement.dataset.userNavigation === "true";
   const destination = "/#ansok";
   let completed = false;
@@ -12,7 +13,7 @@
       await fetch("/api/sales/track-click", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, method }),
+        body: JSON.stringify({ token, method, emailRecipientToken: emailRecipientToken || undefined }),
         credentials: "same-origin",
         keepalive: true,
       });
