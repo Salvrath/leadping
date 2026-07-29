@@ -9,10 +9,9 @@ export function isValidSalesTrackingToken(token: string) {
 export function isLikelyLinkScanner(input: {
   userAgent?: string | null;
   secFetchDest?: string | null;
-  secFetchUser?: string | null;
 }) {
   const userAgent = input.userAgent || "";
-  if (scannerPattern.test(userAgent)) return true;
+  if (!userAgent || scannerPattern.test(userAgent)) return true;
   if (input.secFetchDest && !["document", "empty"].includes(input.secFetchDest)) return true;
-  return input.secFetchUser !== "?1" && scannerPattern.test(`${userAgent} preview`);
+  return false;
 }
