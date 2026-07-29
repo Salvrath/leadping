@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, Building2, Database, FileClock, KeyRound, LayoutDashboard, Phone, Plus, Target } from "lucide-react";
+import { Activity, Building2, Database, FileClock, KeyRound, LayoutDashboard, Mail, Phone, Plus, Target } from "lucide-react";
 import { AdminLogoutForm } from "@/components/admin-actions";
 import { salesLeadStatusLabel } from "@/lib/sales";
 
@@ -12,6 +12,7 @@ export function AdminHeader({ openIncidents = 0, availableNumbers = 0, salesAtte
     <nav className="admin-nav" aria-label="Adminmeny">
       <Link href="/admin"><LayoutDashboard size={16}/><span>Översikt</span></Link>
       <Link href="/admin/sales"><Target size={16}/><span>Sales Hub</span>{salesAttention > 0 && <b>{salesAttention}</b>}</Link>
+      <Link href="/admin/sales/email"><Mail size={16}/><span>E-post</span></Link>
       <Link href="/admin/customers"><KeyRound size={16}/><span>Kundkonton</span></Link>
       <Link href="/admin/provider-numbers"><Phone size={16}/><span>Nummer</span>{availableNumbers > 0 && <b>{availableNumbers}</b>}</Link>
       <Link href="/admin/operations"><Activity size={16}/><span>Drift</span>{openIncidents > 0 && <b className="danger">{openIncidents}</b>}</Link>
@@ -53,8 +54,17 @@ export function AdminStatusBadge({ status }: { status: string }) {
     queued: "Köad",
     sent: "Skickat",
     delivered: "Levererat",
+    clicked: "Klickat",
     replied: "Svarat",
+    bounced: "Studsat",
+    complained: "Spammarkerat",
     skipped: "Överhoppad",
+    generic: "Generell adress",
+    personal: "Personlig adress",
+    unknown: "Okänd",
+    missing: "Saknas",
+    verified: "Verifierad",
+    unsubscribed: "Avregistrerad",
     review: salesLeadStatusLabel("review"),
     approved: salesLeadStatusLabel("approved"),
     engaged: salesLeadStatusLabel("engaged"),
