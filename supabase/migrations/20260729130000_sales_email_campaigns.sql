@@ -36,7 +36,7 @@ create table if not exists public.sales_email_campaign_recipients (
   sales_lead_id uuid not null references public.sales_leads(id) on delete cascade,
   tracking_token uuid not null default gen_random_uuid(),
   email_address text not null,
-  status text not null default 'queued' check (status in ('queued','sending','sent','delivered','clicked','replied','bounced','failed','skipped','blocked')),
+  status text not null default 'queued' check (status in ('queued','sending','sent','delivered','clicked','replied','bounced','complained','failed','skipped','blocked')),
   rendered_subject text not null,
   rendered_text text not null,
   rendered_html text not null,
@@ -58,13 +58,12 @@ create index if not exists sales_email_recipients_lead_idx on public.sales_email
 
 create table if not exists public.sales_email_suppressions (
   id uuid primary key default gen_random_uuid(),
-  email_address text not null,
+  email_address text not null unique,
   reason text not null,
   source text not null default 'unsubscribe',
   sales_lead_id uuid references public.sales_leads(id) on delete set null,
   created_at timestamptz not null default now()
 );
-create unique index if not exists sales_email_suppressions_email_unique on public.sales_email_suppressions(lower(email_address));
 
 create table if not exists public.sales_email_events (
   id uuid primary key default gen_random_uuid(),
