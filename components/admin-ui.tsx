@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, Building2, Database, FileClock, KeyRound, LayoutDashboard, Mail, Phone, Plus, Target } from "lucide-react";
+import { Activity, BarChart3, Building2, Database, FileClock, KeyRound, LayoutDashboard, Mail, Phone, Plus, Target } from "lucide-react";
 import { AdminLogoutForm } from "@/components/admin-actions";
 import { salesLeadStatusLabel } from "@/lib/sales";
 
@@ -11,6 +11,7 @@ export function AdminHeader({ openIncidents = 0, availableNumbers = 0, salesAtte
     </div>
     <nav className="admin-nav" aria-label="Adminmeny">
       <Link href="/admin"><LayoutDashboard size={16}/><span>Översikt</span></Link>
+      <Link href="/admin/marketing"><BarChart3 size={16}/><span>Marknadsföring</span></Link>
       <Link href="/admin/sales"><Target size={16}/><span>Sales Hub</span>{salesAttention > 0 && <b>{salesAttention}</b>}</Link>
       <Link href="/admin/sales/email"><Mail size={16}/><span>E-post</span></Link>
       <Link href="/admin/customers"><KeyRound size={16}/><span>Kundkonton</span></Link>

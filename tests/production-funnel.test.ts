@@ -8,13 +8,14 @@ const lead: Lead = {
   company:"Serviceföretaget",contact:"Kim",email:"kim@example.se",phone:"0700000000",businessPhone:"080000000",
   phoneNumbers:3,telephony:"Telia",industry:"Hantverk",missedCalls:12,privacy:true,authority:true,message:"Hej",
   submissionId:"00000000-0000-4000-8000-000000000001",formStartedAt:1,website:"",
-  utmSource:"google",utmMedium:undefined,utmCampaign:undefined,utmContent:undefined,utmTerm:undefined,landingPath:"/?utm_source=google"
+  utmSource:"google",utmMedium:undefined,utmCampaign:undefined,utmContent:undefined,utmTerm:undefined,
+  gclid:"google-click-123",gbraid:undefined,wbraid:undefined,landingPath:"/?utm_source=google"
 };
 
 describe("production Textback funnel", () => {
-  it("maps validated lead fields to database columns", () => {
+  it("maps validated lead fields and Google click ids to database columns", () => {
     const row = mapLeadToRow(lead);
-    expect(row).toMatchObject({company:"Serviceföretaget",contact_name:"Kim",missed_calls_per_week:12,phone_numbers:3,industry:"Hantverk",submission_id:lead.submissionId,utm_source:"google"});
+    expect(row).toMatchObject({company:"Serviceföretaget",contact_name:"Kim",missed_calls_per_week:12,phone_numbers:3,industry:"Hantverk",submission_id:lead.submissionId,utm_source:"google",gclid:"google-click-123"});
     expect(row).not.toHaveProperty("privacy");
   });
   it("never silently falls back to development storage in production", () => {

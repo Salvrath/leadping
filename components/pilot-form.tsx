@@ -4,10 +4,10 @@ import { useFormState, useFormStatus } from "react-dom";
 import { submitPilot, type FormState } from "@/app/actions";
 import type { Lead } from "@/lib/lead-schema";
 import { track } from "@/lib/analytics";
+import { attributionFormFields, captureAttribution } from "@/lib/client-attribution";
 import { CheckCircle2 } from "lucide-react";
 
 const initial: FormState = { success: false };
-const attributionNames = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
 type FieldName = "company" | "contact" | "email" | "phone" | "businessPhone" | "phoneNumbers" | "telephony" | "industry" | "missedCalls";
 type FieldDefinition = readonly [FieldName, string, "text" | "email" | "tel" | "number"];
 
@@ -18,7 +18,7 @@ function SubmitButton({ ready, commerceEnabled }: { ready: boolean; commerceEnab
   return <button className="button large" disabled={pending || !ready}>{pending ? pendingLabel : label}</button>;
 }
 
-export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boolean }) {
+export function PilotForm({ commerceEnabled = false, variant = "default" }: { commerceEnabled?: boolean; variant?: "default" | "ads" }) {
   const [state, action] = useFormState(submitPilot, initial);
   const [started, setStarted] = useState(false);
   const [meta, setMeta] = useState<Record<string,string>>({});
@@ -30,14 +30,7 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
   useEffect(() => {
     setSubmissionId(crypto.randomUUID());
     setFormStartedAt(Date.now());
-    const query = new URLSearchParams(location.search);
-    const landing = sessionStorage.getItem("textback_landing_path") || location.pathname;
-    sessionStorage.setItem("textback_landing_path", landing);
-    setMeta(Object.fromEntries([
-      ...attributionNames.map((key) => [key, (query.get(key) || "").slice(0, 200)]),
-      ["landing_path", landing.slice(0, 500)],
-      ["referrer", document.referrer ? `${new URL(document.referrer).origin}${new URL(document.referrer).pathname}`.slice(0, 500) : ""],
-    ]));
+    setMeta(attributionFormFields(captureAttribution()));
   }, []);
 
   useEffect(() => {
@@ -68,7 +61,7 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
     }
   }
 
-  const fields: FieldDefinition[] = [
+  const defaultFields: FieldDefinition[] = [
     ["company", "Företagsnamn *", "text"],
     ["contact", "Kontaktperson *", "text"],
     ["email", "E-post *", "email"],
@@ -79,14 +72,24 @@ export function PilotForm({ commerceEnabled = false }: { commerceEnabled?: boole
     ["industry", "Bransch (frivilligt)", "text"],
     ["missedCalls", "Missade samtal per vecka (frivilligt)", "number"],
   ];
+  const adFields: FieldDefinition[] = [
+    ["company", "Företagsnamn *", "text"],
+    ["contact", "Kontaktperson *", "text"],
+    ["email", "E-post *", "email"],
+    ["phone", "Ditt telefonnummer *", "tel"],
+    ["businessPhone", "Företagets telefonnummer *", "tel"],
+    ["telephony", "Operatör eller telefonilösning *", "text"],
+  ];
+  const fields = variant === "ads" ? adFields : defaultFields;
 
-  return <form action={action} className="pilot-form" style={{color:"var(--navy)"}} onFocus={begin} noValidate>
+  return <form action={action} className={`pilot-form${variant === "ads" ? " pilot-form-compact" : ""}`} style={{color:"var(--navy)"}} onFocus={begin} noValidate>
     <div ref={statusRef} tabIndex={-1} role="alert" className={state.message || state.errors ? "form-alert" : "sr-only"}>{state.message || (state.errors ? "Kontrollera de markerade fälten." : "")}</div>
     <input type="hidden" name="submissionId" value={submissionId}/><input type="hidden" name="formStartedAt" value={formStartedAt}/><div className="honeypot" aria-hidden="true"><input name="website" tabIndex={-1}/></div>
-    {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key.replace(/_([a-z])/g,(_,character) => character.toUpperCase())} value={value}/>) }
-    <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}<label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label></div>
+    {variant === "ads" && <input type="hidden" name="phoneNumbers" value="1"/>}
+    {Object.entries(meta).map(([key,value]) => <input key={key} type="hidden" name={key} value={value}/>) }
+    <div className="form-grid">{fields.map(([name,label,type]) => <Field key={name} name={name} label={label} type={type} error={state.errors?.[name]?.[0]} defaultValue={String(state.values?.[name as keyof Lead] ?? "")}/>)}{variant === "default" && <label className="full">Meddelande (frivilligt)<textarea name="message" rows={4} maxLength={2000} defaultValue={state.values?.message ?? ""}/></label>}</div>
     <Check name="privacy" error={state.errors?.privacy?.[0]}>Jag godkänner <a href="/integritet">integritetspolicyn</a>. *</Check><Check name="authority" error={state.errors?.authority?.[0]}>Jag bekräftar att jag får företräda företaget. *</Check>
-    <SubmitButton ready={Boolean(submissionId && formStartedAt)} commerceEnabled={commerceEnabled}/><p className="fine" style={{color:"#64748b"}}>{commerceEnabled ? "495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras." : "Intresseanmälan är kostnadsfri och innebär ingen beställning eller betalning."}</p>
+    <SubmitButton ready={Boolean(submissionId && formStartedAt)} commerceEnabled={commerceEnabled}/><p className="fine" style={{color:"#64748b"}}>{commerceEnabled ? "495 kr/mån i tre månader, därefter 995 kr/mån exklusive moms. Ingen bindningstid. Ingen debitering innan telefonin har verifierats och tjänsten aktiveras." : "Kostnadsfritt och utan beställning eller betalning."}</p>
   </form>;
 }
 

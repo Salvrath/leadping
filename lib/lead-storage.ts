@@ -32,6 +32,9 @@ export function mapLeadToRow(lead: Lead) {
     utm_campaign: lead.utmCampaign || null,
     utm_content: lead.utmContent || null,
     utm_term: lead.utmTerm || null,
+    gclid: lead.gclid || null,
+    gbraid: lead.gbraid || null,
+    wbraid: lead.wbraid || null,
     landing_path: lead.landingPath || null,
     referrer: lead.referrer || null,
   };
