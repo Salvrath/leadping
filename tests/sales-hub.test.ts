@@ -7,6 +7,7 @@ import {
   parseSalesCsv,
   renderSalesMessage,
 } from "@/lib/server/sales";
+import { isLikelyLinkScanner, isValidSalesTrackingToken } from "@/lib/sales-click-tracking";
 
 describe("Sales Hub", () => {
   it("imports semicolon separated Swedish lead data and normalizes phone numbers", () => {
@@ -49,5 +50,16 @@ describe("Sales Hub", () => {
   it("limits cold sending to Swedish weekday business hours", () => {
     expect(isSalesSendWindow(new Date("2026-07-27T10:00:00Z"))).toBe(true);
     expect(isSalesSendWindow(new Date("2026-07-26T10:00:00Z"))).toBe(false);
+  });
+
+  it("accepts UUID tracking tokens and rejects malformed values", () => {
+    expect(isValidSalesTrackingToken("11111111-1111-1111-1111-111111111111")).toBe(true);
+    expect(isValidSalesTrackingToken("not-a-token")).toBe(false);
+  });
+
+  it("classifies known preview agents and non-document requests as scanners", () => {
+    expect(isLikelyLinkScanner({ userAgent: "Slackbot-LinkExpanding 1.0", secFetchDest: "document" })).toBe(true);
+    expect(isLikelyLinkScanner({ userAgent: "Mozilla/5.0", secFetchDest: "image" })).toBe(true);
+    expect(isLikelyLinkScanner({ userAgent: "Mozilla/5.0 (iPhone)", secFetchDest: "document" })).toBe(false);
   });
 });
