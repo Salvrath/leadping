@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: { params: { token: strin
   let emailRecipientId: string | null = null;
   if (lead && validEmailRecipientToken) {
     const { data: recipient } = await db.from("sales_email_campaign_recipients").select("id,sales_lead_id").eq("tracking_token", validEmailRecipientToken).maybeSingle();
-    if (recipient?.sales_lead_id === lead.id) emailRecipientId = recipient.id;
+    if (recipient && recipient.sales_lead_id === lead.id) emailRecipientId = recipient.id;
   }
   if (lead) {
     const userAgent = request.headers.get("user-agent");
