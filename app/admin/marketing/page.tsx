@@ -48,7 +48,7 @@ export default async function MarketingPage() {
     item.leads += 1;
     campaignMap.set(key, item);
   }
-  const breakdown = [...campaignMap.values()].sort((a, b) => (b.leads + b.demoClicks.size + b.formStarts.size) - (a.leads + a.demoClicks.size + a.formStarts.size));
+  const breakdown = Array.from(campaignMap.values()).sort((a, b) => (b.leads + b.demoClicks.size + b.formStarts.size) - (a.leads + a.demoClicks.size + a.formStarts.size));
 
   return <main className="admin-page"><div className="admin-wrap">
     <AdminHeader/>
