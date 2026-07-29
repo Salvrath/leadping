@@ -1,7 +1,72 @@
-import { allows,defaultConsent,type Consent } from "./consent";
-export const eventNames=["page_view","hero_primary_cta_clicked","hero_secondary_cta_clicked","demo_started","demo_phone_clicked","demo_sms_sent","demo_customer_replied","demo_completed","calculator_changed","calculator_cta_clicked","pilot_form_started","pilot_form_submitted","checkout_clicked","faq_opened","final_cta_clicked","pilot_application_saved","pilot_checkout_started","pilot_payment_method_saved","pilot_payment_completed","pilot_checkout_cancelled","pilot_payment_failed","launch_form_started","launch_enquiry_submitted"] as const;
-export type EventName=typeof eventNames[number];
-const forbidden=["name","email","phone","telefon","organisation","message","meddelande","stripe","customer","payment_intent"];
-export function filterAnalyticsProperties(input:Record<string,unknown>={}){return Object.fromEntries(Object.entries(input).filter(([key])=>!forbidden.some(x=>key.toLowerCase().includes(x))));}
-function sessionId(){if(typeof window==="undefined")return "server";const key="textback_session";let value=sessionStorage.getItem(key);if(!value){value=crypto.randomUUID();sessionStorage.setItem(key,value);}return value;}
-export function track(event:EventName,properties:Record<string,unknown>={}){if(typeof window==="undefined")return;let consent:Consent=defaultConsent;try{consent=JSON.parse(localStorage.getItem("textback_consent")||"") as Consent;}catch{}if(event!=="page_view"&&!allows(consent,"analytics"))return;const query=new URLSearchParams(location.search);const payload={event,timestamp:new Date().toISOString(),path:location.pathname,utm_source:query.get("utm_source"),utm_medium:query.get("utm_medium"),utm_campaign:query.get("utm_campaign"),utm_content:query.get("utm_content"),session_id:sessionId(),...filterAnalyticsProperties(properties)};window.dispatchEvent(new CustomEvent("textback:analytics",{detail:payload}));if(process.env.NODE_ENV==="development")console.info("[Textback analytics]",payload);}
+import { allows, defaultConsent, type Consent } from "./consent";
+import { getAttribution } from "./client-attribution";
+
+export const eventNames = [
+  "page_view",
+  "hero_primary_cta_clicked",
+  "hero_secondary_cta_clicked",
+  "demo_started",
+  "demo_phone_clicked",
+  "demo_sms_sent",
+  "demo_customer_replied",
+  "demo_completed",
+  "calculator_changed",
+  "calculator_cta_clicked",
+  "pilot_form_started",
+  "pilot_form_submitted",
+  "checkout_clicked",
+  "faq_opened",
+  "final_cta_clicked",
+  "pilot_application_saved",
+  "pilot_checkout_started",
+  "pilot_payment_method_saved",
+  "pilot_payment_completed",
+  "pilot_checkout_cancelled",
+  "pilot_payment_failed",
+  "launch_form_started",
+  "launch_enquiry_submitted",
+] as const;
+
+export type EventName = typeof eventNames[number];
+const forbidden = ["name", "email", "phone", "telefon", "organisation", "message", "meddelande", "stripe", "customer", "payment_intent"];
+
+export function filterAnalyticsProperties(input: Record<string, unknown> = {}) {
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !forbidden.some((item) => key.toLowerCase().includes(item))));
+}
+
+function sessionId() {
+  if (typeof window === "undefined") return "server";
+  const key = "textback_session";
+  let value = sessionStorage.getItem(key);
+  if (!value) {
+    value = crypto.randomUUID();
+    sessionStorage.setItem(key, value);
+  }
+  return value;
+}
+
+export function track(event: EventName, properties: Record<string, unknown> = {}) {
+  if (typeof window === "undefined") return;
+  let consent: Consent = defaultConsent;
+  try { consent = JSON.parse(localStorage.getItem("textback_consent") || "") as Consent; } catch {}
+  if (event !== "page_view" && !allows(consent, "analytics")) return;
+  const attribution = getAttribution();
+  const payload = {
+    event,
+    timestamp: new Date().toISOString(),
+    path: location.pathname,
+    session_id: sessionId(),
+    utm_source: attribution.utm_source || null,
+    utm_medium: attribution.utm_medium || null,
+    utm_campaign: attribution.utm_campaign || null,
+    utm_content: attribution.utm_content || null,
+    utm_term: attribution.utm_term || null,
+    gclid: attribution.gclid || null,
+    gbraid: attribution.gbraid || null,
+    wbraid: attribution.wbraid || null,
+    landing_path: attribution.landing_path || location.pathname,
+    ...filterAnalyticsProperties(properties),
+  };
+  window.dispatchEvent(new CustomEvent("textback:analytics", { detail: payload }));
+  if (process.env.NODE_ENV === "development") console.info("[Textback analytics]", payload);
+}
