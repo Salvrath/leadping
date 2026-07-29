@@ -4,24 +4,35 @@ import { siteUrl } from "@/lib/site";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
+const uuidPattern = /^[0-9a-f-]{36}$/i;
 
 export async function GET(request: Request, { params }: { params: { token: string } }) {
   const token = params.token;
   if (!isValidSalesTrackingToken(token)) return NextResponse.redirect(`${siteUrl}/`);
 
+  const url = new URL(request.url);
+  const emailRecipientToken = url.searchParams.get("email_recipient");
+  const validEmailRecipientToken = emailRecipientToken && uuidPattern.test(emailRecipientToken) ? emailRecipientToken : null;
   const secFetchUser = request.headers.get("sec-fetch-user");
   const userNavigation = secFetchUser === "?1";
   const db = getSupabaseAdmin();
   const { data: lead } = await db.from("sales_leads").select("id").eq("tracking_token", token).maybeSingle();
+  let emailRecipientId: string | null = null;
+  if (lead && validEmailRecipientToken) {
+    const { data: recipient } = await db.from("sales_email_campaign_recipients").select("id,sales_lead_id").eq("tracking_token", validEmailRecipientToken).maybeSingle();
+    if (recipient?.sales_lead_id === lead.id) emailRecipientId = recipient.id;
+  }
   if (lead) {
     const userAgent = request.headers.get("user-agent");
     const secFetchDest = request.headers.get("sec-fetch-dest");
     await db.from("sales_tracking_events").insert({
       sales_lead_id: lead.id,
+      sales_email_campaign_recipient_id: emailRecipientId,
       event_type: "request",
       user_agent: userAgent?.slice(0, 500) || null,
       suspected_scanner: isLikelyLinkScanner({ userAgent, secFetchDest }),
       request_metadata: {
+        channel: emailRecipientId ? "email" : "sms",
         user_navigation: userNavigation,
         sec_fetch_user: secFetchUser,
         sec_fetch_site: request.headers.get("sec-fetch-site"),
@@ -33,7 +44,7 @@ export async function GET(request: Request, { params }: { params: { token: strin
   }
 
   const html = `<!doctype html>
-<html lang="sv" data-sales-token="${token}" data-user-navigation="${userNavigation}">
+<html lang="sv" data-sales-token="${token}" data-user-navigation="${userNavigation}" data-email-recipient-token="${validEmailRecipientToken || ""}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
