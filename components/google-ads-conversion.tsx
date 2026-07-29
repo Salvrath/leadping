@@ -5,7 +5,8 @@ import { useEffect } from "react";
 import type { Consent } from "@/lib/consent";
 
 const adsId = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID;
-const conversionLabel = process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL;
+const leadLabel = process.env.NEXT_PUBLIC_GOOGLE_ADS_LEAD_LABEL;
+const demoClickLabel = process.env.NEXT_PUBLIC_GOOGLE_ADS_DEMO_CLICK_LABEL;
 
 declare global {
   interface Window {
@@ -24,25 +25,33 @@ function marketingAllowed() {
 
 export function GoogleAdsConversion() {
   useEffect(() => {
-    if (!adsId || !conversionLabel) return;
+    if (!adsId) return;
 
     const handle = (event: Event) => {
       const detail = (event as CustomEvent<Record<string, unknown>>).detail;
-      if (detail.event !== "launch_enquiry_submitted" || !marketingAllowed() || !window.gtag) return;
-
-      window.gtag("event", "conversion", {
-        send_to: `${adsId}/${conversionLabel}`,
-        value: 1,
-        currency: "SEK",
-        transaction_id: typeof detail.lead_id === "string" ? detail.lead_id : undefined,
-      });
+      if (!marketingAllowed() || !window.gtag) return;
+      if (detail.event === "launch_enquiry_submitted" && leadLabel) {
+        window.gtag("event", "conversion", {
+          send_to: `${adsId}/${leadLabel}`,
+          value: 1,
+          currency: "SEK",
+          transaction_id: typeof detail.lead_id === "string" ? detail.lead_id : undefined,
+        });
+      }
+      if (detail.event === "demo_phone_clicked" && demoClickLabel) {
+        window.gtag("event", "conversion", {
+          send_to: `${adsId}/${demoClickLabel}`,
+          value: 0.25,
+          currency: "SEK",
+        });
+      }
     };
 
     window.addEventListener("textback:analytics", handle);
     return () => window.removeEventListener("textback:analytics", handle);
   }, []);
 
-  if (!adsId || !conversionLabel) return null;
+  if (!adsId) return null;
 
   return <>
     <Script src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(adsId)}`} strategy="afterInteractive" />
