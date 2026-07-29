@@ -46,7 +46,7 @@ export default function MissadeSamtalPage() {
           <aside className="ads-demo-card">
             <span className="ads-kicker" style={{color:"#7ee0c7"}}><PhoneCall size={15}/> Live-demo</span>
             <h2>Upplev kundens sida på under en minut.</h2>
-            <a className="ads-demo-number" href={`tel:${demoNumber}`}>{displayNumber}</a>
+            <TrackedLink className="ads-demo-number" href={`tel:${demoNumber}`} event="demo_phone_clicked">{displayNumber}</TrackedLink>
             <ol><li>Ring från mobilen.</li><li>Vänta tills samtalet avslutas.</li><li>Öppna SMS:et som Textback skickar tillbaka.</li></ol>
             <div className="bubble">Hej! Du har testat Textback. Fånga missade samtal automatiskt och få fler kundärenden.</div>
           </aside>
