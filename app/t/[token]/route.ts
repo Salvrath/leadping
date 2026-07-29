@@ -29,8 +29,34 @@ export async function GET(request: Request, { params }: { params: { token: strin
     });
   }
 
-  const destination = new URL(siteUrl);
-  destination.searchParams.set("tb", token);
-  destination.hash = "ansok";
-  return NextResponse.redirect(destination, 302);
+  const html = `<!doctype html>
+<html lang="sv" data-sales-token="${token}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Öppnar Textback</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f4ee;color:#10243e;font-family:Arial,sans-serif}.card{width:min(92vw,430px);padding:38px 30px;text-align:center;background:#fff;border:1px solid #dde5e7;border-radius:20px;box-shadow:0 20px 60px rgba(16,36,62,.12)}img{width:180px;height:auto}.loader{width:34px;height:34px;margin:26px auto 18px;border:3px solid #d7e4e7;border-top-color:#176b87;border-radius:50%;animation:spin .8s linear infinite}p{margin:0;color:#526277;line-height:1.5}a{display:inline-block;margin-top:18px;color:#176b87;font-weight:700}@keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <img src="/textback-logo.svg" alt="Textback">
+    <div class="loader" aria-hidden="true"></div>
+    <p>Öppnar Textback…</p>
+    <a href="/#ansok">Fortsätt till hemsidan</a>
+  </main>
+  <script src="/sales-click-confirm.js" defer></script>
+</body>
+</html>`;
+
+  return new NextResponse(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, max-age=0",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
 }
