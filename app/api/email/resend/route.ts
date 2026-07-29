@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 import { refreshEmailCampaignStats } from "@/lib/server/sales-email";
+import { verifyResendWebhookSignature } from "@/lib/server/resend-webhook";
 import { getSupabaseAdmin } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,7 @@ type ResendEvent = {
 
 export async function POST(request: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!secret || !apiKey) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  if (!secret) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const eventId = request.headers.get("svix-id");
   const timestamp = request.headers.get("svix-timestamp");
   const signature = request.headers.get("svix-signature");
@@ -26,8 +25,9 @@ export async function POST(request: Request) {
   const payload = await request.text();
   let event: ResendEvent;
   try {
-    const resend = new Resend(apiKey);
-    event = resend.webhooks.verify({ payload, headers: { id: eventId, timestamp, signature }, webhookSecret: secret }) as ResendEvent;
+    verifyResendWebhookSignature({ payload, id: eventId, timestamp, signature, secret });
+    event = JSON.parse(payload) as ResendEvent;
+    if (!event?.type) throw new Error("INVALID_EVENT");
   } catch {
     return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
   }
