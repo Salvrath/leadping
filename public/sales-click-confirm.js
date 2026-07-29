@@ -1,5 +1,6 @@
 (() => {
   const token = document.documentElement.dataset.salesToken || "";
+  const userNavigation = document.documentElement.dataset.userNavigation === "true";
   const destination = "/#ansok";
   let completed = false;
 
@@ -28,7 +29,7 @@
   window.addEventListener("keydown", onInteraction, { once: true });
 
   window.setTimeout(() => {
-    if (document.hasFocus()) void confirm("visible_delay");
+    if (userNavigation && document.hasFocus()) void confirm("visible_delay");
   }, 1800);
   window.setTimeout(() => {
     if (!completed) leave();
