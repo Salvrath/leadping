@@ -17,16 +17,17 @@ export default async function SalesPage({ searchParams }: { searchParams?: { q?:
   requireAdmin();
   const db = getSupabaseAdmin();
   const now = new Date().toISOString();
-  const [settings, { data: leads }, { data: campaigns }, { count: inboxCount }, { count: suppressions }, { count: demoTests }, { data: latestRun }] = await Promise.all([
+  const [settings, { data: leads }, { data: campaigns }, { data: inboxMessages }, { count: suppressions }, { count: demoTests }, { data: latestRun }] = await Promise.all([
     getSalesAutomationSettings(),
     db.from("sales_leads").select("id,company_name,organization_number,company_type,industry,city,phone_number,source_url,verified_at,fit_score,status,reply_classification,outbound_count,last_contacted_at,last_reply_at,demo_called_at,website_clicked_at,next_follow_up_at,do_not_contact,verification_status,verification_reasons,automation_score,recommended_action,recommendation_reason,updated_at").order("updated_at", { ascending: false }).limit(500),
     db.from("sales_campaigns").select("id,name,status,recipient_count,sent_count,delivered_count,reply_count,failed_count,estimated_cost_ore,created_at,sent_at,created_by_mode,automation_type").order("created_at", { ascending: false }).limit(12),
-    db.from("sales_leads").select("id", { count: "exact", head: true }).in("status", ["replied", "interested"]),
+    db.from("sales_messages").select("sales_lead_id").eq("direction", "inbound").order("created_at", { ascending: false }).limit(500),
     db.from("sales_suppressions").select("id", { count: "exact", head: true }),
     db.from("sales_leads").select("id", { count: "exact", head: true }).not("demo_called_at", "is", null),
     db.from("sales_automation_runs").select("id,status,dry_run,summary,created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   const allLeads = leads || [];
+  const inboxCount = new Set((inboxMessages || []).map((message) => message.sales_lead_id)).size;
   const query = normalize(searchParams?.q);
   const status = salesLeadStatuses.includes(searchParams?.status as any) ? searchParams!.status! : "all";
   const view = ["all", "due", "hot", "review", "verification"].includes(searchParams?.view || "") ? searchParams!.view! : "all";
@@ -49,7 +50,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: { q?:
     hot: allLeads.filter((lead) => ["interested", "replied", "demo_tested", "engaged"].includes(lead.status)).length,
     due: allLeads.filter((lead) => lead.next_follow_up_at && lead.next_follow_up_at <= now && !lead.do_not_contact).length,
   };
-  const attention = (inboxCount || 0) + stats.due + stats.verification;
+  const attention = inboxCount + stats.due + stats.verification;
 
   return <main className="admin-page"><div className="admin-wrap">
     <AdminHeader salesAttention={attention}/>
@@ -77,7 +78,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: { q?:
       <Link className="admin-card admin-action-card" href="/admin/sales/automation"><Bot size={22}/><div><strong>Assisterat läge</strong><span>{latestRun ? `Senast kört ${fmt(latestRun.created_at)}` : "Simulera och förbered dagens arbete"}</span></div></Link>
       <Link className="admin-card admin-action-card" href="/admin/sales/import"><Import size={22}/><div><strong>Importera leadlista</strong><span>Batchspårning, dubblettkontroll och verifiering</span></div></Link>
       <Link className="admin-card admin-action-card" href="/admin/sales/campaigns/new"><Megaphone size={22}/><div><strong>Skapa manuellt utskick</strong><span>{stats.approved} godkända leads kan väljas</span></div></Link>
-      <Link className="admin-card admin-action-card" href="/admin/sales/inbox"><Inbox size={22}/><div><strong>Öppna säljinboxen</strong><span>{inboxCount || 0} svar behöver hanteras</span></div></Link>
+      <Link className="admin-card admin-action-card" href="/admin/sales/inbox"><Inbox size={22}/><div><strong>Öppna säljinboxen</strong><span>{inboxCount} företag har svarat</span></div></Link>
     </section>
 
     <div className="admin-note"><strong>Inbyggda skydd:</strong> assisterat läge skickar aldrig på egen hand, alla kampanjer kräver separat godkännande, max två kalla SMS, vardagar 08–18, dagligt utskickstak och central STOPP-spärr ({suppressions || 0} nummer).</div>
@@ -113,7 +114,7 @@ export default async function SalesPage({ searchParams }: { searchParams?: { q?:
 
     <section className="admin-card admin-section">
       <div className="admin-section-head"><div><h2>Senaste kampanjer</h2><p>Assisterade utkast och manuella kampanjer samlas här.</p></div><Link className="admin-link-button" href="/admin/sales/campaigns/new">Ny kampanj</Link></div>
-      {(campaigns || []).length === 0 ? <AdminEmpty title="Inga kampanjer ännu" text="Kör assisterat läge eller välj godkända leads manuellt."/> : <div className="sales-campaign-grid">{(campaigns || []).map((campaign) => <Link className="sales-campaign-card" href={`/admin/sales/campaigns/${campaign.id}`} key={campaign.id}><div><strong>{campaign.name}</strong><span>{campaign.created_by_mode === "assisted" ? "Assisterat" : "Manuellt"} · {fmt(campaign.created_at)}</span></div><AdminStatusBadge status={campaign.status}/><div className="sales-campaign-metrics"><span>{campaign.sent_count}/{campaign.recipient_count} skickade</span><span>{campaign.reply_count} svar</span><span>{(campaign.estimated_cost_ore / 100).toLocaleString("sv-SE", {style:"currency",currency:"SEK"})}</span></div></Link>)}</div>}
+      {(campaigns || []).length === 0 ? <AdminEmpty title="Inga kampanjer ännu" text="Kör assisterat läge eller välj godkända leads manuellt."/> : <div className="sales-campaign-grid">{(campaigns || []).map((campaign) => <Link className="sales-campaign-card" href={`/admin/sales/campaigns/${campaign.id}`} key={campaign.id}><div><strong>{campaign.name}</strong><span>{campaign.created_by_mode === "assisted" ? "Assisterat" : "Manuellt"} · {fmt(campaign.created_at)}</span></div><AdminStatusBadge status={campaign.status}/><div className="sales-campaign-metrics"><span>{campaign.sent_count}/{campaign.recipient_count} skickade</span><span>{campaign.delivered_count} levererade</span><span>{campaign.reply_count} svar</span><span>{(campaign.estimated_cost_ore / 100).toLocaleString("sv-SE", {style:"currency",currency:"SEK"})}</span></div></Link>)}</div>}
     </section>
   </div></main>;
 }
