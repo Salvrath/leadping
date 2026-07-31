@@ -8,8 +8,17 @@ const baseLead: AssistantLead = {
   company_type: "aktiebolag",
   industry: "VVS",
   city: "Uppsala",
+  contact_name: "Anna Andersson",
+  contact_role: "VD",
   phone_number: "+46701234567",
-  source_url: "https://example.se/test",
+  phone_contact_type: "direct_decision_maker",
+  phone_source_url: "https://example.se/kontakt",
+  decision_maker_verified: true,
+  email_address: "anna@example.se",
+  email_status: "verified",
+  email_verified_at: "2026-07-20T10:00:00.000Z",
+  email_source_url: "https://example.se/kontakt",
+  source_url: "https://example.se/kontakt",
   verified_at: "2026-07-20T10:00:00.000Z",
   fit_score: 90,
   status: "review",
@@ -24,11 +33,48 @@ const baseLead: AssistantLead = {
 };
 
 describe("assisted Sales Hub", () => {
-  it("auto-approves a fresh verified AB lead without sending anything", () => {
+  it("auto-approves a verified decision-maker contact without sending anything", () => {
     const result = evaluateSalesLead(baseLead, settings, new Set(), new Set(), new Date("2026-07-28T10:00:00.000Z"));
     expect(result.verificationStatus).toBe("ready");
     expect(result.nextStatus).toBe("approved");
-    expect(result.recommendedAction).toBe("Lägg i kampanjutkast");
+    expect(result.recommendedAction).toBe("Lägg i SMS-utkast");
+    expect(result.smsEligible).toBe(true);
+    expect(result.emailEligible).toBe(true);
+  });
+
+  it("accepts a verified email-only lead but excludes it from SMS", () => {
+    const result = evaluateSalesLead({
+      ...baseLead,
+      contact_name: "Mårten Persson",
+      contact_role: "VD",
+      phone_number: null,
+      phone_contact_type: "none",
+      phone_source_url: null,
+      decision_maker_verified: false,
+      status: "approved",
+    }, settings, new Set(), new Set(), new Date("2026-07-28T10:00:00.000Z"));
+    expect(result.verificationStatus).toBe("ready");
+    expect(result.smsEligible).toBe(false);
+    expect(result.emailEligible).toBe(true);
+    expect(result.recommendedAction).toBe("Lägg i e-postutkast");
+  });
+
+  it("does not qualify a public company mobile without a named decision-maker", () => {
+    const result = evaluateSalesLead({
+      ...baseLead,
+      contact_name: null,
+      contact_role: null,
+      phone_contact_type: "unverified_public",
+      decision_maker_verified: false,
+      email_address: null,
+      email_status: "missing",
+      email_verified_at: null,
+      email_source_url: null,
+    }, settings, new Set(), new Set(), new Date("2026-07-28T10:00:00.000Z"));
+    expect(result.verificationStatus).toBe("needs_review");
+    expect(result.smsEligible).toBe(false);
+    expect(result.emailEligible).toBe(false);
+    expect(result.reasons.join(" ")).toContain("direktnummer");
   });
 
   it("requires manual review when the source is stale", () => {
@@ -38,13 +84,13 @@ describe("assisted Sales Hub", () => {
   });
 
   it("rejects suppressed and existing customer numbers", () => {
-    const suppressed = evaluateSalesLead(baseLead, settings, new Set(), new Set([baseLead.phone_number]), new Date("2026-07-28T10:00:00.000Z"));
-    const customer = evaluateSalesLead(baseLead, settings, new Set([baseLead.phone_number]), new Set(), new Date("2026-07-28T10:00:00.000Z"));
+    const suppressed = evaluateSalesLead(baseLead, settings, new Set(), new Set([baseLead.phone_number!]), new Date("2026-07-28T10:00:00.000Z"));
+    const customer = evaluateSalesLead(baseLead, settings, new Set([baseLead.phone_number!]), new Set(), new Date("2026-07-28T10:00:00.000Z"));
     expect(suppressed.verificationStatus).toBe("rejected");
     expect(customer.verificationStatus).toBe("rejected");
   });
 
-  it("creates a follow-up suggestion only after the due date", () => {
+  it("creates an SMS follow-up suggestion only for a qualified direct number after the due date", () => {
     const result = evaluateSalesLead({
       ...baseLead,
       status: "contacted",
@@ -53,7 +99,7 @@ describe("assisted Sales Hub", () => {
       next_follow_up_at: "2026-07-24T10:00:00.000Z",
     }, settings, new Set(), new Set(), new Date("2026-07-28T10:00:00.000Z"));
     expect(result.nextStatus).toBe("follow_up");
-    expect(result.followUpTemplate).toContain("Test VVS AB");
+    expect(result.followUpTemplate).toContain("automatiskt SMS");
   });
 
   it("diversifies an automated draft across industries and cities", () => {
