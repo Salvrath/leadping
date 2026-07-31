@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from "@/lib/server/supabase";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: { code: string } }) {
-  const code = params.code.toLocaleLowerCase("en-US");
+  const code = params.code;
   if (!isValidSalesShortCode(code)) return NextResponse.redirect(`${siteUrl}/`);
 
   const secFetchUser = request.headers.get("sec-fetch-user");
