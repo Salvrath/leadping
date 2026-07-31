@@ -1,5 +1,5 @@
 export const salesTrackingTokenPattern = /^[0-9a-f-]{36}$/i;
-export const salesShortCodePattern = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{5}$/;
+export const salesShortCodePattern = /^[0-9a-f]{7}$/;
 
 const scannerPattern = /(bot|crawler|spider|preview|prefetch|safebrowsing|urlscan|linkcheck|linkexpander|facebookexternalhit|whatsapp|slackbot|telegrambot|discordbot|skypeuripreview|proofpoint|barracuda|mimecast|symantec|trendmicro|googleimageproxy|outlook|office existence discovery)/i;
 
