@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultSalesCampaignMessage } from "@/lib/sales";
 import {
   classifySalesReply,
   ensureSalesSmsCompliance,
@@ -6,8 +7,9 @@ import {
   isSalesSendWindow,
   parseSalesCsv,
   renderSalesMessage,
+  salesShortCodeFromTrackingToken,
 } from "@/lib/server/sales";
-import { isLikelyLinkScanner, isValidSalesTrackingToken } from "@/lib/sales-click-tracking";
+import { isLikelyLinkScanner, isValidSalesShortCode, isValidSalesTrackingToken } from "@/lib/sales-click-tracking";
 
 describe("Sales Hub", () => {
   it("imports semicolon separated Swedish lead data and normalizes phone numbers", () => {
@@ -33,12 +35,23 @@ describe("Sales Hub", () => {
     expect(ensureSalesSmsCompliance("Hej, testa Textback")).toMatch(/\/Textback.*Svara STOPP\./);
   });
 
-  it("renders personalized demo number and tracked link", () => {
-    const message = renderSalesMessage("Hej {{companyName}}. Ring {{demoNumber}}. {{link}}", { company_name: "Test AB", tracking_token: "11111111-1111-1111-1111-111111111111" }, "+46766867723");
-    expect(message).toContain("Test AB");
+  it("generates a stable compact short code", () => {
+    expect(salesShortCodeFromTrackingToken("01630c2c-c396-42a7-ba89-f28f59841538")).toBe("2BuJsqh");
+    expect(isValidSalesShortCode("2BuJsqh")).toBe(true);
+    expect(isValidSalesShortCode("0OIl123")).toBe(false);
+  });
+
+  it("renders the default campaign as one SMS part with demo number and short link", () => {
+    const message = renderSalesMessage(defaultSalesCampaignMessage, {
+      company_name: "Test AB",
+      tracking_token: "01630c2c-c396-42a7-ba89-f28f59841538",
+    }, "+46766867723");
     expect(message).toContain("076-686 77 23");
-    expect(message).toContain("/t/11111111-1111-1111-1111-111111111111");
+    expect(message).toContain("https://textback.se/x/2BuJsqh");
+    expect(message).not.toContain("/t/");
     expect(message).toContain("Svara STOPP");
+    expect(message.length).toBeLessThanOrEqual(160);
+    expect(estimateSmsParts(message)).toBe(1);
   });
 
   it("calculates multipart SMS conservatively", () => {
