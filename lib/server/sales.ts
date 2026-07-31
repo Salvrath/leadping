@@ -138,9 +138,9 @@ export function ensureSalesSmsCompliance(message: string) {
 }
 
 export function salesTrackedLink(lead: { short_code?: string | null; tracking_token?: string | null }) {
-  if (lead.short_code) return `${siteUrl}/x/${lead.short_code}`;
-  if (lead.tracking_token) return `${siteUrl}/t/${lead.tracking_token}`;
-  throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+  const code = lead.short_code || lead.tracking_token?.replaceAll("-", "").slice(0, 7);
+  if (!code) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+  return `${siteUrl}/x/${code}`;
 }
 
 export function renderSalesMessage(template: string, lead: { company_name: string; tracking_token?: string | null; short_code?: string | null }, demoNumber: string) {
