@@ -141,11 +141,11 @@ export function ensureSalesSmsCompliance(message: string) {
 export function salesShortCodeFromTrackingToken(trackingToken: string) {
   const hex = trackingToken.replaceAll("-", "").slice(0, 10);
   if (!/^[0-9a-f]{10}$/i.test(hex)) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
-  let value = BigInt(`0x${hex}`);
+  let value = Number.parseInt(hex, 16);
   let result = "";
   for (let index = 0; index < 7; index += 1) {
-    result = SALES_SHORT_CODE_ALPHABET[Number(value % 57n)] + result;
-    value /= 57n;
+    result = SALES_SHORT_CODE_ALPHABET[value % 57] + result;
+    value = Math.floor(value / 57);
   }
   return result;
 }
