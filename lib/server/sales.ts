@@ -137,16 +137,22 @@ export function ensureSalesSmsCompliance(message: string) {
   return result.replace(/\s+/g, " ").slice(0, 1000);
 }
 
-export function renderSalesMessage(template: string, lead: { company_name: string; tracking_token: string }, demoNumber: string) {
-  const link = `${siteUrl}/t/${lead.tracking_token}`;
+export function salesTrackedLink(lead: { short_code?: string | null; tracking_token?: string | null }) {
+  if (lead.short_code) return `${siteUrl}/x/${lead.short_code}`;
+  if (lead.tracking_token) return `${siteUrl}/t/${lead.tracking_token}`;
+  throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+}
+
+export function renderSalesMessage(template: string, lead: { company_name: string; tracking_token?: string | null; short_code?: string | null }, demoNumber: string) {
+  const link = salesTrackedLink(lead);
   return ensureSalesSmsCompliance(template
     .replaceAll("{{companyName}}", lead.company_name)
     .replaceAll("{{demoNumber}}", displayPhone(demoNumber))
     .replaceAll("{{link}}", link));
 }
 
-export function salesDemoMessage(lead: { company_name: string; tracking_token: string }) {
-  return `Hej! Nu har ${lead.company_name} testat Textback. Så här fångas missade samtal automatiskt. Svara här om ni vill ansluta eller har frågor. ${siteUrl}/t/${lead.tracking_token} /Textback`;
+export function salesDemoMessage(lead: { company_name: string; tracking_token?: string | null; short_code?: string | null }) {
+  return `Hej! Nu har ${lead.company_name} testat Textback. Så här fångas missade samtal automatiskt. Svara här om ni vill ansluta eller har frågor. ${salesTrackedLink(lead)} /Textback`;
 }
 
 export function displayPhone(value: string) {
