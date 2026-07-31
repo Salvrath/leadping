@@ -53,7 +53,7 @@ language plpgsql
 set search_path = public
 as $$
 begin
-  if new.short_code is null or new.tracking_token is distinct from old.tracking_token then
+  if tg_op = 'INSERT' or new.short_code is null or new.tracking_token is distinct from old.tracking_token then
     new.short_code := public.sales_short_code_from_tracking_token(new.tracking_token);
   end if;
   return new;
