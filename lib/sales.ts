@@ -52,7 +52,7 @@ export const salesReplyClassificationLabels: Record<SalesReplyClassification, st
   stop: "STOPP",
 };
 
-export const defaultSalesCampaignMessage = "Hej {{companyName}}! Textback skickar automatiskt SMS när ni missar samtal. Ring {{demoNumber}} och lägg på för att testa själv. {{link}} /Textback. Svara STOPP.";
+export const defaultSalesCampaignMessage = "Hej! Textback skickar automatiskt SMS när ni missar samtal. Testa: ring {{demoNumber}} och lägg på. Info: {{link}} /Textback. Svara STOPP.";
 
 export function salesLeadStatusLabel(status: string) {
   return salesLeadStatusLabels[status as SalesLeadStatus] || status.replaceAll("_", " ");

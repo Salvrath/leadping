@@ -8,6 +8,7 @@ import { normalizePhoneNumber } from "@/lib/server/telephony/number";
 const SALES_SMS_COST_ORE = 52;
 const SALES_BATCH_LIMIT = 20;
 const SALES_DAILY_LIMIT = 50;
+const SALES_SHORT_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 export type ImportedSalesLead = {
   companyName: string;
@@ -137,16 +138,34 @@ export function ensureSalesSmsCompliance(message: string) {
   return result.replace(/\s+/g, " ").slice(0, 1000);
 }
 
-export function renderSalesMessage(template: string, lead: { company_name: string; tracking_token: string }, demoNumber: string) {
-  const link = `${siteUrl}/t/${lead.tracking_token}`;
+export function salesShortCodeFromTrackingToken(trackingToken: string) {
+  const hex = trackingToken.replaceAll("-", "").slice(0, 10);
+  if (!/^[0-9a-f]{10}$/i.test(hex)) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+  let value = Number.parseInt(hex, 16);
+  let result = "";
+  for (let index = 0; index < 7; index += 1) {
+    result = SALES_SHORT_CODE_ALPHABET[value % 57] + result;
+    value = Math.floor(value / 57);
+  }
+  return result;
+}
+
+export function salesTrackedLink(lead: { short_code?: string | null; tracking_token?: string | null }) {
+  const code = lead.short_code || (lead.tracking_token ? salesShortCodeFromTrackingToken(lead.tracking_token) : null);
+  if (!code) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+  return `${siteUrl}/x/${code}`;
+}
+
+export function renderSalesMessage(template: string, lead: { company_name: string; tracking_token?: string | null; short_code?: string | null }, demoNumber: string) {
+  const link = salesTrackedLink(lead);
   return ensureSalesSmsCompliance(template
     .replaceAll("{{companyName}}", lead.company_name)
     .replaceAll("{{demoNumber}}", displayPhone(demoNumber))
     .replaceAll("{{link}}", link));
 }
 
-export function salesDemoMessage(lead: { company_name: string; tracking_token: string }) {
-  return `Hej! Nu har ${lead.company_name} testat Textback. Så här fångas missade samtal automatiskt. Svara här om ni vill ansluta eller har frågor. ${siteUrl}/t/${lead.tracking_token} /Textback`;
+export function salesDemoMessage(lead: { company_name: string; tracking_token?: string | null; short_code?: string | null }) {
+  return `Hej! Nu har ${lead.company_name} testat Textback. Så här fångas missade samtal automatiskt. Svara här om ni vill ansluta eller har frågor. ${salesTrackedLink(lead)} /Textback`;
 }
 
 export function displayPhone(value: string) {
