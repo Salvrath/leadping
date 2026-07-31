@@ -27,7 +27,16 @@ export type AssistantLead = {
   company_type: string;
   industry: string | null;
   city: string | null;
-  phone_number: string;
+  contact_name: string | null;
+  contact_role: string | null;
+  phone_number: string | null;
+  phone_contact_type: string;
+  phone_source_url: string | null;
+  decision_maker_verified: boolean;
+  email_address: string | null;
+  email_status: string;
+  email_verified_at: string | null;
+  email_source_url: string | null;
   source_url: string | null;
   verified_at: string | null;
   fit_score: number;
@@ -40,6 +49,7 @@ export type AssistantLead = {
   website_clicked_at: string | null;
   next_follow_up_at: string | null;
   tracking_token: string;
+  short_code?: string | null;
 };
 
 export type LeadEvaluation = {
@@ -51,6 +61,8 @@ export type LeadEvaluation = {
   nextStatus: string;
   followUpTemplate: string | null;
   followUpSuggestedAt: string | null;
+  smsEligible: boolean;
+  emailEligible: boolean;
 };
 
 export type SalesAssistantSummary = {
@@ -71,7 +83,7 @@ export type SalesAssistantSummary = {
 };
 
 const DAY = 24 * 60 * 60_000;
-const followUpTemplate = "Hej igen {{companyName}}! Ville bara följa upp. Ring {{demoNumber}} och lägg på om ni vill uppleva hur Textback fångar ett missat samtal. {{link}} /Textback. Svara STOPP.";
+const followUpTemplate = "Hej igen! Kan automatiskt SMS vid missade samtal vara relevant för er? Testa kundupplevelsen: {{demoNumber}}. /Textback. Svara STOPP.";
 
 export async function getSalesAutomationSettings(): Promise<SalesAutomationSettings> {
   const { data, error } = await getSupabaseAdmin().from("sales_automation_settings").select("paused,auto_approve_verified,auto_create_drafts,simulation_only,batch_size,min_draft_size,verification_max_age_days,follow_up_after_days").eq("id", true).maybeSingle();
@@ -99,8 +111,8 @@ function isHttpsUrl(value: string | null) {
   try { return new URL(value).protocol === "https:"; } catch { return false; }
 }
 
-function suggestedFollowUp(companyName: string) {
-  return followUpTemplate.replace("{{companyName}}", companyName);
+function suggestedFollowUp() {
+  return followUpTemplate;
 }
 
 export function evaluateSalesLead(
@@ -116,28 +128,48 @@ export function evaluateSalesLead(
   const ageDays = verifiedAt && !Number.isNaN(verifiedAt.valueOf()) ? Math.floor((now.valueOf() - verifiedAt.valueOf()) / DAY) : null;
   const suppressed = lead.do_not_contact || Boolean(phone && suppressedNumbers.has(phone));
   const knownCustomer = Boolean(phone && knownBusinessNumbers.has(phone));
+  const smsEligible = Boolean(
+    phone
+    && phone.startsWith("+467")
+    && lead.phone_contact_type === "direct_decision_maker"
+    && lead.decision_maker_verified
+    && lead.contact_name
+    && lead.contact_role
+    && isHttpsUrl(lead.phone_source_url || lead.source_url)
+    && !suppressed
+    && !knownCustomer
+  );
+  const emailEligible = Boolean(
+    lead.email_address
+    && lead.email_status === "verified"
+    && lead.email_verified_at
+    && isHttpsUrl(lead.email_source_url || lead.source_url)
+    && !lead.do_not_contact
+  );
 
-  if (suppressed) reasons.push("Numret finns i spärrlistan.");
+  if (suppressed) reasons.push("Kontakten finns i spärrlistan.");
   if (knownCustomer) reasons.push("Numret används redan av ett Textback-företag.");
-  if (!phone || !phone.startsWith("+467")) reasons.push("Ett verifierat svenskt mobilnummer saknas.");
   if (lead.company_type !== "aktiebolag") reasons.push("Bolagsformen är inte verifierad som aktiebolag.");
   if (!isHttpsUrl(lead.source_url)) reasons.push("En giltig HTTPS-källa saknas.");
   if (ageDays === null) reasons.push("Verifieringsdatum saknas.");
   else if (ageDays > settings.verification_max_age_days) reasons.push(`Källkontrollen är äldre än ${settings.verification_max_age_days} dagar.`);
+  if (!smsEligible && phone) reasons.push("SMS-numret är inte verifierat som direktnummer till en namngiven beslutsfattare.");
+  if (!smsEligible && !emailEligible) reasons.push("Ingen verifierad kontaktkanal är klar för utskick.");
 
-  const rejected = suppressed || knownCustomer || !phone;
-  const ready = !rejected && reasons.length === 0;
+  const rejected = suppressed || knownCustomer;
+  const ready = !rejected && reasons.filter((reason) => !reason.startsWith("SMS-numret")).length === 0 && (smsEligible || emailEligible);
   const verificationStatus: LeadEvaluation["verificationStatus"] = rejected ? "rejected" : ready ? "ready" : "needs_review";
   let score = Math.max(0, Math.min(100, lead.fit_score || 0));
-  if (ready) score = Math.min(100, score + 5);
+  if (smsEligible) score = Math.min(100, score + 8);
+  else if (emailEligible) score = Math.min(100, score + 3);
   score += lead.demo_called_at ? 15 : 0;
   score += lead.last_reply_at ? 15 : 0;
   score += lead.website_clicked_at ? 8 : 0;
-  score -= Math.min(20, reasons.length * 5);
+  score -= Math.min(20, reasons.filter((reason) => !reason.startsWith("SMS-numret")).length * 5);
   score = Math.max(0, Math.min(100, score));
 
   const dueAt = lead.next_follow_up_at ? new Date(lead.next_follow_up_at) : null;
-  const coldFollowUpDue = lead.outbound_count === 1 && !lead.last_reply_at && !lead.demo_called_at && !lead.website_clicked_at && dueAt && dueAt <= now;
+  const coldFollowUpDue = smsEligible && lead.outbound_count === 1 && !lead.last_reply_at && !lead.demo_called_at && !lead.website_clicked_at && dueAt && dueAt <= now;
   let recommendedAction = "Avvakta";
   let recommendationReason = "Ingen åtgärd krävs just nu.";
   let nextStatus = lead.status;
@@ -167,18 +199,22 @@ export function evaluateSalesLead(
     recommendedAction = "Granska uppföljningsutkast";
     recommendationReason = "Första SMS:et har inte gett någon aktivitet och uppföljningsdatumet har passerat.";
     nextStatus = "follow_up";
-    template = suggestedFollowUp(lead.company_name);
+    template = suggestedFollowUp();
     suggestedAt = now.toISOString();
-  } else if (lead.outbound_count >= 2) {
-    recommendedAction = "Avsluta kall sekvens";
+  } else if (smsEligible && lead.outbound_count >= 2) {
+    recommendedAction = "Avsluta kall SMS-sekvens";
     recommendationReason = "Två kalla SMS har skickats utan en tydlig signal.";
   } else if (lead.status === "review" && settings.auto_approve_verified) {
-    recommendedAction = "Lägg i kampanjutkast";
-    recommendationReason = "Leadet klarar alla automatiska kontroller och kan förberedas för manuell utskicksgranskning.";
+    recommendedAction = smsEligible ? "Lägg i SMS-utkast" : "Lägg i e-postutkast";
+    recommendationReason = smsEligible
+      ? "Leadet har ett verifierat direktnummer till beslutsfattare."
+      : "Leadet har en verifierad e-postadress men inget godkänt SMS-nummer.";
     nextStatus = "approved";
   } else if (lead.status === "approved") {
-    recommendedAction = "Lägg i kampanjutkast";
-    recommendationReason = "Leadet är verifierat och godkänt men har inte kontaktats.";
+    recommendedAction = smsEligible ? "Lägg i SMS-utkast" : "Lägg i e-postutkast";
+    recommendationReason = smsEligible
+      ? "Leadet är verifierat för SMS till beslutsfattare."
+      : "Leadet är verifierat endast för e-post.";
   }
 
   return {
@@ -190,6 +226,8 @@ export function evaluateSalesLead(
     nextStatus,
     followUpTemplate: template,
     followUpSuggestedAt: suggestedAt,
+    smsEligible,
+    emailEligible,
   };
 }
 
@@ -268,7 +306,7 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
 
   try {
     const [{ data: leads, error: leadError }, { data: numbers }, { data: suppressions }, { data: openCampaigns }] = await Promise.all([
-      db.from("sales_leads").select("id,company_name,company_type,industry,city,phone_number,source_url,verified_at,fit_score,status,do_not_contact,outbound_count,last_contacted_at,last_reply_at,demo_called_at,website_clicked_at,next_follow_up_at,tracking_token").limit(1000),
+      db.from("sales_leads").select("id,company_name,company_type,industry,city,contact_name,contact_role,phone_number,phone_contact_type,phone_source_url,decision_maker_verified,email_address,email_status,email_verified_at,email_source_url,source_url,verified_at,fit_score,status,do_not_contact,outbound_count,last_contacted_at,last_reply_at,demo_called_at,website_clicked_at,next_follow_up_at,tracking_token,short_code").limit(1000),
       db.from("textback_numbers").select("provider_number,business_phone_numbers"),
       db.from("sales_suppressions").select("phone_number"),
       db.from("sales_campaigns").select("id,status,created_by_mode,automation_type").in("status", ["draft", "sending"]),
@@ -294,7 +332,7 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
     const needsReview = evaluated.filter((item) => item.evaluation.verificationStatus === "needs_review");
     const rejected = evaluated.filter((item) => item.evaluation.verificationStatus === "rejected");
     const autoApproved = evaluated.filter((item) => item.lead.status === "review" && item.evaluation.nextStatus === "approved");
-    const dueFollowUps = evaluated.filter((item) => item.evaluation.followUpTemplate);
+    const dueFollowUps = evaluated.filter((item) => item.evaluation.smsEligible && item.evaluation.followUpTemplate);
 
     if (!effectiveDryRun) {
       const updateResults = await Promise.all(evaluated.map(({ lead, evaluation }) => db.from("sales_leads").update({
@@ -307,6 +345,7 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
         automation_updated_at: now.toISOString(),
         follow_up_template: evaluation.followUpTemplate,
         follow_up_suggested_at: evaluation.followUpSuggestedAt,
+        next_follow_up_at: evaluation.smsEligible ? lead.next_follow_up_at : null,
         status: evaluation.nextStatus,
         updated_at: now.toISOString(),
       }).eq("id", lead.id)));
@@ -321,10 +360,10 @@ export async function runSalesAssistant(input: { dryRun: boolean; source: "admin
     const alreadyQueued = new Set((openRecipientResult.data || []).map((item) => item.sales_lead_id));
 
     const coldPool = evaluated
-      .filter(({ lead, evaluation }) => evaluation.verificationStatus === "ready" && evaluation.nextStatus === "approved" && lead.outbound_count === 0 && !alreadyQueued.has(lead.id))
+      .filter(({ lead, evaluation }) => evaluation.smsEligible && evaluation.verificationStatus === "ready" && evaluation.nextStatus === "approved" && lead.outbound_count === 0 && !alreadyQueued.has(lead.id))
       .map(({ lead, evaluation }) => ({ ...lead, automationScore: evaluation.automationScore }));
     const followUpPool = evaluated
-      .filter(({ lead, evaluation }) => Boolean(evaluation.followUpTemplate) && !alreadyQueued.has(lead.id))
+      .filter(({ lead, evaluation }) => evaluation.smsEligible && Boolean(evaluation.followUpTemplate) && !alreadyQueued.has(lead.id))
       .map(({ lead, evaluation }) => ({ ...lead, automationScore: evaluation.automationScore }));
     const coldSelected = selectDiverseLeads(coldPool, settings.batch_size);
     const followUpSelected = selectDiverseLeads(followUpPool, settings.batch_size);

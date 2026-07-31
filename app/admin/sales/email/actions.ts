@@ -64,6 +64,10 @@ function pick(row: Record<string, string>, names: string[]) {
   return "";
 }
 
+function verifiedEmailContact(lead: { email_type?: string | null; contact_name?: string | null; contact_role?: string | null }) {
+  return lead.email_type === "generic" || Boolean(lead.email_type === "personal" && lead.contact_name && lead.contact_role);
+}
+
 export async function importSalesEmailsWithFeedback(_previous: AdminActionState, formData: FormData): Promise<AdminActionState> {
   requireAdmin();
   try {
@@ -92,7 +96,7 @@ export async function importSalesEmailsWithFeedback(_previous: AdminActionState,
 
     const db = getSupabaseAdmin();
     const [{ data: leads, error: leadError }, { data: suppressions, error: suppressionError }] = await Promise.all([
-      db.from("sales_leads").select("id,company_name,phone_number,organization_number,email_unsubscribe_token").limit(2000),
+      db.from("sales_leads").select("id,company_name,phone_number,organization_number,email_unsubscribe_token,contact_name,contact_role").limit(2000),
       db.from("sales_email_suppressions").select("email_address"),
     ]);
     if (leadError || suppressionError) throw new Error("SALES_EMAIL_IMPORT_LOOKUP_FAILED");
@@ -113,7 +117,8 @@ export async function importSalesEmailsWithFeedback(_previous: AdminActionState,
       if (!lead) { rejected += 1; continue; }
       const emailType = classifySalesEmail(row.email);
       const isSuppressed = suppressed.has(row.email);
-      const verified = emailType === "generic" && Boolean(row.sourceUrl?.startsWith("https://") && row.verifiedAt) && !isSuppressed;
+      const hasVerifiedRecipient = emailType === "generic" || Boolean(emailType === "personal" && lead.contact_name && lead.contact_role);
+      const verified = hasVerifiedRecipient && Boolean(row.sourceUrl?.startsWith("https://") && row.verifiedAt) && !isSuppressed;
       const emailStatus = isSuppressed ? "unsubscribed" : verified ? "verified" : "pending";
       const { error } = await db.from("sales_leads").update({
         email_address: row.email,
@@ -147,14 +152,19 @@ export async function updateSalesLeadEmailWithFeedback(_previous: AdminActionSta
     if (!verifiedAt) return adminActionError("Ange ett giltigt verifieringsdatum.");
     const emailType = classifySalesEmail(email);
     const db = getSupabaseAdmin();
-    const { data: suppression } = await db.from("sales_email_suppressions").select("id").ilike("email_address", email).maybeSingle();
-    const emailStatus = suppression ? "unsubscribed" : emailType === "generic" ? "verified" : "pending";
+    const [{ data: suppression }, { data: lead, error: leadError }] = await Promise.all([
+      db.from("sales_email_suppressions").select("id").ilike("email_address", email).maybeSingle(),
+      db.from("sales_leads").select("contact_name,contact_role").eq("id", leadId).maybeSingle(),
+    ]);
+    if (leadError || !lead) throw new Error("SALES_EMAIL_UPDATE_FAILED");
+    const canVerify = emailType === "generic" || Boolean(emailType === "personal" && lead.contact_name && lead.contact_role);
+    const emailStatus = suppression ? "unsubscribed" : canVerify ? "verified" : "pending";
     const { error } = await db.from("sales_leads").update({ email_address: email, email_type: emailType, email_source_url: sourceUrl, email_verified_at: verifiedAt, email_status: emailStatus, updated_at: new Date().toISOString() }).eq("id", leadId);
     if (error) throw new Error("SALES_EMAIL_UPDATE_FAILED");
     await auditEvent({ actor: adminActor, action: "sales_email.updated", targetType: "sales_lead", targetId: leadId, metadata: { email_type: emailType, email_status: emailStatus } });
     refresh();
     revalidatePath(`/admin/sales/leads/${leadId}`);
-    return adminActionSuccess(emailType === "generic" ? "E-postadressen är verifierad för kampanjer." : "Adressen är sparad men kräver manuell bedömning eftersom den verkar personlig.");
+    return adminActionSuccess(canVerify ? "E-postadressen är verifierad för kampanjer." : "Adressen är sparad men kräver en namngiven mottagare och roll.");
   } catch {
     return adminActionError("E-postuppgifterna kunde inte sparas.");
   }
@@ -169,12 +179,12 @@ export async function createSalesEmailCampaign(formData: FormData) {
   if (!ids.length || ids.length > salesEmailBatchLimit()) redirect("/admin/sales/email/new?error=selection");
   const db = getSupabaseAdmin();
   const [{ data: leads, error }, { data: suppressions }] = await Promise.all([
-    db.from("sales_leads").select("id,company_name,email_address,email_type,email_status,email_outbound_count,email_unsubscribe_token,tracking_token,do_not_contact").in("id", ids),
+    db.from("sales_leads").select("id,company_name,contact_name,contact_role,email_address,email_type,email_status,email_verified_at,email_outbound_count,email_unsubscribe_token,tracking_token,do_not_contact").in("id", ids),
     db.from("sales_email_suppressions").select("email_address"),
   ]);
   if (error) throw new Error("SALES_EMAIL_LEADS_FAILED");
   const suppressed = new Set((suppressions || []).map((item) => item.email_address.toLocaleLowerCase("en-US")));
-  const eligible = (leads || []).filter((lead) => lead.email_address && lead.email_type === "generic" && lead.email_status === "verified" && !lead.do_not_contact && lead.email_outbound_count < 2 && !suppressed.has(lead.email_address.toLocaleLowerCase("en-US")));
+  const eligible = (leads || []).filter((lead) => lead.email_address && lead.email_verified_at && verifiedEmailContact(lead) && lead.email_status === "verified" && !lead.do_not_contact && lead.email_outbound_count < 2 && !suppressed.has(lead.email_address.toLocaleLowerCase("en-US")));
   if (!eligible.length) redirect("/admin/sales/email/new?error=eligible");
   const { data: campaign, error: campaignError } = await db.from("sales_email_campaigns").insert({ name, subject_template: subjectTemplate, body_template: bodyTemplate, recipient_count: eligible.length }).select("id").single();
   if (campaignError || !campaign) throw new Error("SALES_EMAIL_CAMPAIGN_CREATE_FAILED");
@@ -213,7 +223,7 @@ export async function sendSalesEmailCampaignWithFeedback(_previous: AdminActionS
     if (!isSalesSendWindow()) return adminActionError("E-postutskick kan göras vardagar klockan 08–18.");
     const db = getSupabaseAdmin();
     const { data: campaign, error } = await db.from("sales_email_campaigns")
-      .select("id,status,sales_email_campaign_recipients(id,status,email_address,rendered_subject,rendered_text,rendered_html,sales_lead_id,sales_leads(id,email_status,email_outbound_count,email_first_contacted_at,email_unsubscribe_token,do_not_contact))")
+      .select("id,status,sales_email_campaign_recipients(id,status,email_address,rendered_subject,rendered_text,rendered_html,sales_lead_id,sales_leads(id,contact_name,contact_role,email_type,email_status,email_verified_at,email_outbound_count,email_first_contacted_at,email_unsubscribe_token,do_not_contact))")
       .eq("id", campaignId).maybeSingle();
     if (error || !campaign) throw new Error("SALES_EMAIL_CAMPAIGN_NOT_FOUND");
     if (campaign.status !== "draft") return adminActionError("Kampanjen har redan behandlats.");
@@ -231,9 +241,9 @@ export async function sendSalesEmailCampaignWithFeedback(_previous: AdminActionS
     let blocked = 0;
     for (const recipient of recipients as any[]) {
       const lead = Array.isArray(recipient.sales_leads) ? recipient.sales_leads[0] : recipient.sales_leads;
-      if (!lead || lead.do_not_contact || lead.email_status !== "verified" || lead.email_outbound_count >= 2 || suppressed.has(recipient.email_address.toLocaleLowerCase("en-US"))) {
+      if (!lead || lead.do_not_contact || lead.email_status !== "verified" || !lead.email_verified_at || !verifiedEmailContact(lead) || lead.email_outbound_count >= 2 || suppressed.has(recipient.email_address.toLocaleLowerCase("en-US"))) {
         blocked += 1;
-        await db.from("sales_email_campaign_recipients").update({ status: "blocked", failure_reason: "suppressed_or_contact_limit", updated_at: new Date().toISOString() }).eq("id", recipient.id);
+        await db.from("sales_email_campaign_recipients").update({ status: "blocked", failure_reason: "suppressed_or_contact_not_verified", updated_at: new Date().toISOString() }).eq("id", recipient.id);
         continue;
       }
       await db.from("sales_email_campaign_recipients").update({ status: "sending", updated_at: new Date().toISOString() }).eq("id", recipient.id);

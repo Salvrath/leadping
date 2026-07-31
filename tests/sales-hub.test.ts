@@ -12,16 +12,40 @@ import {
 import { isLikelyLinkScanner, isValidSalesShortCode, isValidSalesTrackingToken } from "@/lib/sales-click-tracking";
 
 describe("Sales Hub", () => {
-  it("imports semicolon separated Swedish lead data and normalizes phone numbers", () => {
-    const result = parseSalesCsv("företagsnamn;mobilnummer;bolagsform;källa;verifierad;fitscore\nTest AB;070 123 45 67;Aktiebolag;https://example.se;2026-07-28;88");
+  it("imports a named decision-maker with verified direct number", () => {
+    const result = parseSalesCsv("företagsnamn;kontaktperson;roll;mobilnummer;nummertyp;beslutsfattare verifierad;bolagsform;källa;verifierad;fitscore\nTest AB;Anna Andersson;VD;070 123 45 67;direkt beslutsfattare;ja;Aktiebolag;https://example.se/kontakt;2026-07-28;88");
     expect(result.rejected).toHaveLength(0);
-    expect(result.rows).toEqual([expect.objectContaining({ companyName: "Test AB", phoneNumber: "+46701234567", companyType: "aktiebolag", fitScore: 88 })]);
+    expect(result.rows).toEqual([expect.objectContaining({
+      companyName: "Test AB",
+      contactName: "Anna Andersson",
+      contactRole: "VD",
+      phoneNumber: "+46701234567",
+      phoneContactType: "direct_decision_maker",
+      decisionMakerVerified: true,
+      companyType: "aktiebolag",
+      fitScore: 88,
+    })]);
   });
 
-  it("rejects rows without a valid company or phone number", () => {
-    const result = parseSalesCsv("företagsnamn;mobilnummer\n;123");
-    expect(result.rows).toHaveLength(0);
-    expect(result.rejected[0]?.reason).toBe("Företagsnamn saknas.");
+  it("imports an email-only lead without inventing a phone number", () => {
+    const result = parseSalesCsv("företagsnamn;kontaktperson;roll;e-post;bolagsform;e-postkälla;e-postverifierad\nTakbolaget AB;Mårten Persson;VD;marten@example.se;Aktiebolag;https://example.se/kontakt;2026-07-28");
+    expect(result.rejected).toHaveLength(0);
+    expect(result.rows[0]).toEqual(expect.objectContaining({
+      companyName: "Takbolaget AB",
+      phoneNumber: null,
+      phoneContactType: "none",
+      emailAddress: "marten@example.se",
+      emailType: "personal",
+    }));
+  });
+
+  it("rejects rows without a company or contact channel", () => {
+    const missingCompany = parseSalesCsv("företagsnamn;mobilnummer\n;123");
+    const missingChannel = parseSalesCsv("företagsnamn;mobilnummer;e-post\nTest AB;;");
+    expect(missingCompany.rows).toHaveLength(0);
+    expect(missingCompany.rejected[0]?.reason).toBe("Företagsnamn saknas.");
+    expect(missingChannel.rows).toHaveLength(0);
+    expect(missingChannel.rejected[0]?.reason).toBe("Giltigt telefonnummer eller e-postadress saknas.");
   });
 
   it("classifies opt-out and buying signals", () => {

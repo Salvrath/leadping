@@ -9,6 +9,7 @@ const SALES_SMS_COST_ORE = 52;
 const SALES_BATCH_LIMIT = 20;
 const SALES_DAILY_LIMIT = 50;
 const SALES_SHORT_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const genericEmailLocalParts = new Set(["info", "kontakt", "offert", "bokning", "kundservice", "hej", "mail", "order", "service"]);
 
 export type ImportedSalesLead = {
   companyName: string;
@@ -17,7 +18,15 @@ export type ImportedSalesLead = {
   industry: string | null;
   city: string | null;
   contactName: string | null;
-  phoneNumber: string;
+  contactRole: string | null;
+  phoneNumber: string | null;
+  phoneContactType: "direct_decision_maker" | "direct_staff" | "general_company" | "unverified_public" | "none" | "unknown";
+  phoneSourceUrl: string | null;
+  decisionMakerVerified: boolean;
+  emailAddress: string | null;
+  emailType: "generic" | "personal" | "unknown";
+  emailSourceUrl: string | null;
+  emailVerifiedAt: string | null;
   sourceUrl: string | null;
   sourceNotes: string | null;
   verifiedAt: string | null;
@@ -69,6 +78,33 @@ function safeDate(value: string) {
   return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString();
 }
 
+function normalizeEmailAddress(value: string) {
+  const normalized = value.trim().toLocaleLowerCase("en-US");
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null;
+}
+
+function classifyEmailAddress(value: string | null): ImportedSalesLead["emailType"] {
+  if (!value) return "unknown";
+  const localPart = value.split("@", 1)[0];
+  return genericEmailLocalParts.has(localPart) ? "generic" : "personal";
+}
+
+function parseBoolean(value: string) {
+  return /^(1|ja|yes|true|verifierad)$/i.test(value.trim());
+}
+
+function parsedPhoneContactType(value: string, inferredDecisionMaker: boolean, hasNamedContact: boolean, hasPhone: boolean): ImportedSalesLead["phoneContactType"] {
+  const normalized = value.toLocaleLowerCase("sv-SE").replace(/[\s-]+/g, "_");
+  if (["direct_decision_maker", "direkt_beslutsfattare", "beslutsfattare"].includes(normalized)) return "direct_decision_maker";
+  if (["direct_staff", "direkt_person", "personal"].includes(normalized)) return "direct_staff";
+  if (["general_company", "allmänt_företagsnummer", "allmant_foretagsnummer", "växel", "vaxel"].includes(normalized)) return "general_company";
+  if (["unverified_public", "publikt_oregistrerat", "okontrollerat"].includes(normalized)) return "unverified_public";
+  if (!hasPhone) return "none";
+  if (inferredDecisionMaker) return "direct_decision_maker";
+  if (hasNamedContact) return "direct_staff";
+  return "unknown";
+}
+
 export function parseSalesCsv(input: string): { rows: ImportedSalesLead[]; rejected: { row: number; reason: string }[] } {
   const lines = input.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
   if (lines.length < 2) return { rows: [], rejected: [{ row: 1, reason: "CSV-filen saknar data." }] };
@@ -81,24 +117,42 @@ export function parseSalesCsv(input: string): { rows: ImportedSalesLead[]; rejec
     const values = parseDelimitedLine(lines[index], delimiter);
     const row = Object.fromEntries(headers.map((header, cellIndex) => [header, values[cellIndex] || ""]));
     const companyName = pick(row, ["företagsnamn", "foretagsnamn", "company", "companyname", "namn"]);
-    const rawPhone = pick(row, ["mobilnummer", "telefonnummer", "telefon", "phone", "mobile"]);
-    const phoneNumber = normalizePhoneNumber(rawPhone);
-    if (!companyName || !phoneNumber) {
-      rejected.push({ row: index + 1, reason: !companyName ? "Företagsnamn saknas." : "Telefonnumret är ogiltigt." });
+    const phoneNumber = normalizePhoneNumber(pick(row, ["mobilnummer", "telefonnummer", "telefon", "phone", "mobile"]));
+    const emailAddress = normalizeEmailAddress(pick(row, ["e-post", "epost", "email", "emailaddress", "mail"]));
+    if (!companyName || (!phoneNumber && !emailAddress)) {
+      rejected.push({ row: index + 1, reason: !companyName ? "Företagsnamn saknas." : "Giltigt telefonnummer eller e-postadress saknas." });
       continue;
     }
+    const contactName = pick(row, ["kontaktperson", "contact", "contactname"]) || null;
+    const contactRole = pick(row, ["roll", "kontaktroll", "contactrole", "titel", "title"]) || null;
+    const inferredDecisionMaker = Boolean(contactName && contactRole && /\b(vd|ceo|ägare|agare|grundare|verksamhetsansvarig|operativ chef|säljchef|saljchef)\b/i.test(contactRole));
+    const decisionMakerVerified = Boolean(phoneNumber && (parseBoolean(pick(row, ["beslutsfattareverifierad", "decisionmakerverified", "verifieradbeslutsfattare"])) || inferredDecisionMaker));
+    const phoneContactType = parsedPhoneContactType(pick(row, ["nummertyp", "phonecontacttype", "telefontyp"]), decisionMakerVerified, Boolean(contactName), Boolean(phoneNumber));
+    const sourceUrl = pick(row, ["källa", "kalla", "source", "sourceurl", "url"]) || null;
+    const phoneSourceUrl = pick(row, ["telefonkälla", "telefonkalla", "phonesource", "phonesourceurl"]) || sourceUrl;
+    const emailSourceUrl = pick(row, ["e-postkälla", "epostkalla", "emailsource", "emailsourceurl"]) || sourceUrl;
+    const verifiedAt = safeDate(pick(row, ["verifierad", "verifieringsdatum", "verifiedat"]));
+    const emailVerifiedAt = safeDate(pick(row, ["e-postverifierad", "epostverifierad", "emailverifiedat"])) || (emailAddress ? verifiedAt : null);
     const rawFit = Number(pick(row, ["fitscore", "poäng", "poang", "score"]) || 50);
     rows.push({
       companyName: companyName.slice(0, 160),
       organizationNumber: pick(row, ["organisationsnummer", "orgnummer", "orgnr", "organizationnumber"]) || null,
-      companyType: companyType(pick(row, ["bolagsform", "companytype", "företagsform", "foretagsform"])),
+      companyType: companyType(pick(row, ["bolagsform", "companytype", "företagsform", "foretagsform"]) || companyName),
       industry: pick(row, ["bransch", "industry"]) || null,
       city: pick(row, ["ort", "stad", "city"]) || null,
-      contactName: pick(row, ["kontaktperson", "contact", "contactname"]) || null,
+      contactName,
+      contactRole,
       phoneNumber,
-      sourceUrl: pick(row, ["källa", "kalla", "source", "sourceurl", "url"]) || null,
+      phoneContactType,
+      phoneSourceUrl,
+      decisionMakerVerified,
+      emailAddress,
+      emailType: classifyEmailAddress(emailAddress),
+      emailSourceUrl,
+      emailVerifiedAt,
+      sourceUrl,
       sourceNotes: pick(row, ["källanteckning", "kallanteckning", "sourcenotes"]) || null,
-      verifiedAt: safeDate(pick(row, ["verifierad", "verifieringsdatum", "verifiedat"])),
+      verifiedAt,
       fitScore: Math.max(0, Math.min(100, Number.isFinite(rawFit) ? Math.round(rawFit) : 50)),
       fitReason: pick(row, ["fitreason", "motivering", "produktpassning"]) || null,
       tags: pick(row, ["taggar", "tags"]).split(/[|,]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 20),
