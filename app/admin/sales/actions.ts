@@ -28,6 +28,7 @@ const refreshSales = () => {
   revalidatePath("/admin");
   revalidatePath("/admin/sales");
   revalidatePath("/admin/sales/inbox");
+  revalidatePath("/admin/sales/email");
 };
 
 function errorMessage(error: unknown) {
@@ -40,6 +41,7 @@ function errorMessage(error: unknown) {
     SALES_LEAD_BLOCKED: "Kontakten är spärrad från fler utskick.",
     SALES_REPLY_EMPTY: "Skriv ett meddelande först.",
     SALES_OUTBOUND_PAUSED: "All utgående försäljning är pausad.",
+    SALES_SMS_CONTACT_NOT_QUALIFIED: "SMS kräver ett verifierat direktnummer till en namngiven beslutsfattare.",
   };
   return messages[code] || "Åtgärden kunde inte genomföras. Kontrollera uppgifterna och försök igen.";
 }
@@ -56,11 +58,15 @@ export async function importSalesLeadsWithFeedback(_previous: AdminActionState, 
     if (!parsed.rows.length) return adminActionError(parsed.rejected[0]?.reason || "Inga giltiga leads hittades.");
     if (parsed.rows.length > 500) return adminActionError("Importera högst 500 leads åt gången.");
 
-    const uniqueRows = Array.from(new Map(parsed.rows.map((row) => [row.phoneNumber, row])).values());
+    const uniqueRows = Array.from(new Map(parsed.rows.map((row) => [row.phoneNumber || row.emailAddress, row])).values());
     const db = getSupabaseAdmin();
-    const { data: suppressions, error: suppressionError } = await db.from("sales_suppressions").select("phone_number").in("phone_number", uniqueRows.map((row) => row.phoneNumber));
-    if (suppressionError) throw new Error("SALES_SUPPRESSION_LOOKUP_FAILED");
-    const suppressed = new Set((suppressions || []).map((item) => item.phone_number));
+    const phoneNumbers = uniqueRows.map((row) => row.phoneNumber).filter(Boolean) as string[];
+    const suppressionResult = phoneNumbers.length
+      ? await db.from("sales_suppressions").select("phone_number").in("phone_number", phoneNumbers)
+      : { data: [], error: null };
+    if (suppressionResult.error) throw new Error("SALES_SUPPRESSION_LOOKUP_FAILED");
+    const suppressed = new Set((suppressionResult.data || []).map((item) => item.phone_number));
+    const now = new Date().toISOString();
     const values = uniqueRows.map((row) => ({
       company_name: row.companyName,
       organization_number: row.organizationNumber,
@@ -68,18 +74,39 @@ export async function importSalesLeadsWithFeedback(_previous: AdminActionState, 
       industry: row.industry,
       city: row.city,
       contact_name: row.contactName,
+      contact_role: row.contactRole,
       phone_number: row.phoneNumber,
+      phone_contact_type: row.phoneContactType,
+      phone_source_url: row.phoneSourceUrl,
+      decision_maker_verified: row.decisionMakerVerified,
+      email_address: row.emailAddress,
+      email_type: row.emailType,
+      email_source_url: row.emailSourceUrl,
+      email_verified_at: row.emailVerifiedAt,
+      email_status: row.emailAddress && row.emailVerifiedAt ? "verified" : row.emailAddress ? "pending" : "missing",
       source_url: row.sourceUrl,
       source_notes: row.sourceNotes,
       verified_at: row.verifiedAt,
       fit_score: row.fitScore,
       fit_reason: row.fitReason,
       tags: row.tags,
-      ...(suppressed.has(row.phoneNumber) ? { do_not_contact: true, status: "blocked" } : {}),
-      updated_at: new Date().toISOString(),
+      ...(row.phoneNumber && suppressed.has(row.phoneNumber) ? { do_not_contact: true, status: "blocked" } : {}),
+      updated_at: now,
     }));
-    const { error } = await db.from("sales_leads").upsert(values, { onConflict: "phone_number" });
-    if (error) throw new Error("SALES_IMPORT_FAILED");
+    const phoneRows = values.filter((row) => row.phone_number);
+    if (phoneRows.length) {
+      const { error } = await db.from("sales_leads").upsert(phoneRows, { onConflict: "phone_number" });
+      if (error) throw new Error("SALES_IMPORT_FAILED");
+    }
+    const emailOnlyRows = values.filter((row) => !row.phone_number && row.email_address);
+    for (const row of emailOnlyRows) {
+      const { data: existing, error: lookupError } = await db.from("sales_leads").select("id").eq("email_address", row.email_address).maybeSingle();
+      if (lookupError) throw new Error("SALES_IMPORT_FAILED");
+      const result = existing
+        ? await db.from("sales_leads").update(row).eq("id", existing.id)
+        : await db.from("sales_leads").insert(row);
+      if (result.error) throw new Error("SALES_IMPORT_FAILED");
+    }
     await auditEvent({ actor: adminActor, action: "sales_leads.imported", targetType: "sales_lead", metadata: { accepted: uniqueRows.length, rejected: parsed.rejected.length } });
     refreshSales();
     return adminActionSuccess(`${uniqueRows.length} leads importerades${parsed.rejected.length ? ` · ${parsed.rejected.length} rader hoppades över` : ""}.`);
@@ -95,10 +122,14 @@ export async function approveSalesLeadsWithFeedback(_previous: AdminActionState,
     if (!ids.length) return adminActionError("Välj minst ett lead.");
     if (ids.length > 100) return adminActionError("Godkänn högst 100 leads åt gången.");
     const db = getSupabaseAdmin();
-    const { data, error } = await db.from("sales_leads").select("id,company_type,source_url,verified_at,do_not_contact").in("id", ids);
+    const { data, error } = await db.from("sales_leads").select("id,company_type,source_url,verified_at,do_not_contact,phone_number,phone_contact_type,decision_maker_verified,contact_name,contact_role,email_address,email_status,email_verified_at").in("id", ids);
     if (error) throw new Error("SALES_LEAD_LOOKUP_FAILED");
-    const eligible = (data || []).filter((lead) => lead.company_type === "aktiebolag" && lead.source_url && lead.verified_at && !lead.do_not_contact).map((lead) => lead.id);
-    if (!eligible.length) return adminActionError("Inget valt lead uppfyller kraven: aktiebolag, sparad källa, verifieringsdatum och inte spärrat.");
+    const eligible = (data || []).filter((lead) => {
+      const smsQualified = Boolean(lead.phone_number && lead.phone_contact_type === "direct_decision_maker" && lead.decision_maker_verified && lead.contact_name && lead.contact_role);
+      const emailQualified = Boolean(lead.email_address && lead.email_status === "verified" && lead.email_verified_at);
+      return lead.company_type === "aktiebolag" && lead.source_url && lead.verified_at && !lead.do_not_contact && (smsQualified || emailQualified);
+    }).map((lead) => lead.id);
+    if (!eligible.length) return adminActionError("Inget valt lead har en verifierad kontaktkanal till rätt mottagare.");
     const { error: updateError } = await db.from("sales_leads").update({ status: "approved", updated_at: new Date().toISOString() }).in("id", eligible);
     if (updateError) throw new Error("SALES_APPROVAL_FAILED");
     await auditEvent({ actor: adminActor, action: "sales_leads.approved", targetType: "sales_lead", metadata: { count: eligible.length } });
@@ -118,10 +149,15 @@ export async function createSalesCampaign(formData: FormData) {
   const db = getSupabaseAdmin();
   const [demo, leadsResult] = await Promise.all([
     getSalesDemoNumber(),
-    db.from("sales_leads").select("id,company_name,phone_number,status,do_not_contact,tracking_token,outbound_count,last_reply_at,demo_called_at").in("id", ids),
+    db.from("sales_leads").select("id,company_name,phone_number,phone_contact_type,decision_maker_verified,contact_name,contact_role,status,do_not_contact,tracking_token,short_code,outbound_count,last_reply_at,demo_called_at").in("id", ids),
   ]);
   if (leadsResult.error) throw new Error("SALES_LEAD_LOOKUP_FAILED");
-  const leads = (leadsResult.data || []).filter((lead) => ["approved", "follow_up", "interested", "replied", "demo_tested", "engaged"].includes(lead.status) && !lead.do_not_contact && (lead.outbound_count < 2 || lead.last_reply_at || lead.demo_called_at));
+  const leads = (leadsResult.data || []).filter((lead) =>
+    ["approved", "follow_up", "interested", "replied", "demo_tested", "engaged"].includes(lead.status)
+    && !lead.do_not_contact
+    && Boolean(lead.phone_number && lead.phone_contact_type === "direct_decision_maker" && lead.decision_maker_verified && lead.contact_name && lead.contact_role)
+    && (lead.outbound_count < 2 || lead.last_reply_at || lead.demo_called_at)
+  );
   if (!leads.length) redirect("/admin/sales/campaigns/new?error=eligible");
   const recipients = leads.map((lead) => {
     const rendered = renderSalesMessage(template, lead, demo.provider_number);
@@ -158,7 +194,7 @@ export async function sendSalesCampaignWithFeedback(_previous: AdminActionState,
     if (!isSalesSendWindow()) throw new Error("SALES_SEND_WINDOW_CLOSED");
     const db = getSupabaseAdmin();
     const { data: campaign, error } = await db.from("sales_campaigns")
-      .select("id,status,textback_number_id,textback_numbers(provider,provider_number,active,demo_mode),sales_campaign_recipients(id,status,rendered_message,sales_lead_id,sales_leads(id,company_name,phone_number,status,do_not_contact,outbound_count,first_contacted_at,last_reply_at,demo_called_at))")
+      .select("id,status,textback_number_id,textback_numbers(provider,provider_number,active,demo_mode),sales_campaign_recipients(id,status,rendered_message,sales_lead_id,sales_leads(id,company_name,phone_number,phone_contact_type,decision_maker_verified,contact_name,contact_role,status,do_not_contact,outbound_count,first_contacted_at,last_reply_at,demo_called_at))")
       .eq("id", campaignId).maybeSingle();
     if (error || !campaign) throw new Error("SALES_CAMPAIGN_NOT_FOUND");
     if (campaign.status !== "draft") return adminActionError("Kampanjen har redan behandlats.");
@@ -169,14 +205,17 @@ export async function sendSalesCampaignWithFeedback(_previous: AdminActionState,
     const remaining = await remainingSalesDailyCapacity();
     if (remaining < recipients.length) throw new Error("SALES_DAILY_LIMIT_REACHED");
     const phones = recipients.map((recipient: any) => (Array.isArray(recipient.sales_leads) ? recipient.sales_leads[0] : recipient.sales_leads)?.phone_number).filter(Boolean);
-    const { data: suppressions } = await db.from("sales_suppressions").select("phone_number").in("phone_number", phones);
-    const suppressed = new Set((suppressions || []).map((item) => item.phone_number));
+    const suppressionResult = phones.length
+      ? await db.from("sales_suppressions").select("phone_number").in("phone_number", phones)
+      : { data: [] as { phone_number: string }[], error: null };
+    const suppressed = new Set((suppressionResult.data || []).map((item) => item.phone_number));
     await db.from("sales_campaigns").update({ status: "sending", sent_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", campaignId).eq("status", "draft");
 
     const results = await Promise.all(recipients.map(async (recipient: any) => {
       const lead = Array.isArray(recipient.sales_leads) ? recipient.sales_leads[0] : recipient.sales_leads;
-      if (!lead || lead.do_not_contact || suppressed.has(lead.phone_number) || (lead.outbound_count >= 2 && !lead.last_reply_at && !lead.demo_called_at)) {
-        await db.from("sales_campaign_recipients").update({ status: "blocked", failure_reason: "suppressed_or_contact_limit", updated_at: new Date().toISOString() }).eq("id", recipient.id);
+      const qualified = Boolean(lead?.phone_number && lead.phone_contact_type === "direct_decision_maker" && lead.decision_maker_verified && lead.contact_name && lead.contact_role);
+      if (!lead || !qualified || lead.do_not_contact || suppressed.has(lead.phone_number) || (lead.outbound_count >= 2 && !lead.last_reply_at && !lead.demo_called_at)) {
+        await db.from("sales_campaign_recipients").update({ status: "blocked", failure_reason: qualified ? "suppressed_or_contact_limit" : "decision_maker_not_verified", updated_at: new Date().toISOString() }).eq("id", recipient.id);
         return { sent: false, blocked: true };
       }
       const requestId = randomUUID();
@@ -191,7 +230,7 @@ export async function sendSalesCampaignWithFeedback(_previous: AdminActionState,
         body: recipient.rendered_message,
         delivery_status: "sending",
         client_request_id: requestId,
-        raw_event: { source: "sales_campaign", campaign_id: campaignId },
+        raw_event: { source: "sales_campaign", campaign_id: campaignId, contact_verification: "direct_decision_maker" },
       }).select("id").single();
       if (messageError || !message) return { sent: false, blocked: false };
       await db.from("sales_campaign_recipients").update({ status: "sending", updated_at: new Date().toISOString() }).eq("id", recipient.id);
@@ -248,7 +287,7 @@ export async function updateSalesLeadWithFeedback(_previous: AdminActionState, f
     const db = getSupabaseAdmin();
     const { data: lead, error } = await db.from("sales_leads").update({ status, fit_score: fitScore, notes, next_follow_up_at: nextFollowUp, do_not_contact: block, updated_at: new Date().toISOString() }).eq("id", id).select("id,phone_number").maybeSingle();
     if (error || !lead) throw new Error("SALES_LEAD_UPDATE_FAILED");
-    if (block) await db.from("sales_suppressions").upsert({ phone_number: lead.phone_number, reason: status, source: "admin", sales_lead_id: id }, { onConflict: "phone_number" });
+    if (block && lead.phone_number) await db.from("sales_suppressions").upsert({ phone_number: lead.phone_number, reason: status, source: "admin", sales_lead_id: id }, { onConflict: "phone_number" });
     await auditEvent({ actor: adminActor, action: "sales_lead.updated", targetType: "sales_lead", targetId: id, metadata: { status, fit_score: fitScore } });
     refreshSales();
     revalidatePath(`/admin/sales/leads/${id}`);
@@ -274,6 +313,7 @@ export async function sendSalesReplyWithFeedback(_previous: AdminActionState, fo
     ]);
     if (leadError || !lead) throw new Error("SALES_LEAD_NOT_FOUND");
     if (lead.do_not_contact) throw new Error("SALES_LEAD_BLOCKED");
+    if (!lead.phone_number) throw new Error("SALES_SMS_CONTACT_NOT_QUALIFIED");
     const { data: message, error } = await db.from("sales_messages").insert({ sales_lead_id: lead.id, textback_number_id: demo.id, provider: "46elks", direction: "outbound", sender_number: demo.provider_number, recipient_number: lead.phone_number, body, delivery_status: "sending", client_request_id: requestId, raw_event: { source: "sales_inbox" } }).select("id").single();
     if (error || !message) throw new Error("SALES_MESSAGE_CREATE_FAILED");
     try {
