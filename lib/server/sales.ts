@@ -8,6 +8,7 @@ import { normalizePhoneNumber } from "@/lib/server/telephony/number";
 const SALES_SMS_COST_ORE = 52;
 const SALES_BATCH_LIMIT = 20;
 const SALES_DAILY_LIMIT = 50;
+const SALES_SHORT_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 export type ImportedSalesLead = {
   companyName: string;
@@ -137,8 +138,20 @@ export function ensureSalesSmsCompliance(message: string) {
   return result.replace(/\s+/g, " ").slice(0, 1000);
 }
 
+export function salesShortCodeFromTrackingToken(trackingToken: string) {
+  const hex = trackingToken.replaceAll("-", "").slice(0, 10);
+  if (!/^[0-9a-f]{10}$/i.test(hex)) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
+  let value = BigInt(`0x${hex}`);
+  let result = "";
+  for (let index = 0; index < 7; index += 1) {
+    result = SALES_SHORT_CODE_ALPHABET[Number(value % 57n)] + result;
+    value /= 57n;
+  }
+  return result;
+}
+
 export function salesTrackedLink(lead: { short_code?: string | null; tracking_token?: string | null }) {
-  const code = lead.short_code || lead.tracking_token?.replaceAll("-", "").slice(0, 7);
+  const code = lead.short_code || (lead.tracking_token ? salesShortCodeFromTrackingToken(lead.tracking_token) : null);
   if (!code) throw new Error("SALES_TRACKING_LINK_UNAVAILABLE");
   return `${siteUrl}/x/${code}`;
 }
