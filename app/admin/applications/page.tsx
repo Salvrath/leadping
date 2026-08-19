@@ -12,6 +12,14 @@ const fmt = (value?: string | null) => value
 
 const normalize = (value?: string | null) => (value || "").trim().toLocaleLowerCase("sv-SE");
 
+const formStatusLabel: Record<string, string> = {
+  application_submitted: "Inskickat",
+  checkout_started: "Checkout startad",
+  active: "Aktiv",
+  completed: "Klar",
+  canceled: "Avbruten",
+};
+
 const paymentLabel: Record<string, string> = {
   not_started: "Inte påbörjad",
   checkout_created: "Checkout skapad",
@@ -59,6 +67,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams?
       application.telephony,
       application.utm_source,
       application.utm_campaign,
+      application.message,
     ].join(" ").toLocaleLowerCase("sv-SE");
     return haystack.includes(query);
   });
@@ -82,7 +91,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams?
     </section>
 
     <div className="admin-toolbar">
-      <div><div className="admin-kicker"><Search size={14}/> Sök formulär</div><p className="admin-intro" style={{marginBottom:0}}>Sök på företag, kontaktperson, e-post, telefon eller bransch.</p></div>
+      <div><div className="admin-kicker"><Search size={14}/> Sök formulär</div><p className="admin-intro" style={{marginBottom:0}}>Sök på företag, kontaktperson, e-post, telefon, bransch eller meddelande.</p></div>
       <form className="admin-search" action="/admin/applications" method="get">
         <label><Search size={16}/><input name="q" defaultValue={searchParams?.q || ""} placeholder="Sök företag eller kontakt"/></label>
         <button className="admin-button primary">Sök</button>
@@ -95,7 +104,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams?
 
       {visible.length === 0 ? <AdminEmpty title="Inga formulär matchar" text="Ändra sökningen eller återställ filtret."/> : <>
         <div className="admin-table-wrap"><table className="admin-table"><thead><tr>
-          <th>Inskickat</th><th>Företag</th><th>Kontakt</th><th>Kontaktuppgifter</th><th>Verksamhet</th><th>Telefoni</th><th>Missade samtal</th><th>Status</th><th>Källa</th>
+          <th>Inskickat</th><th>Företag</th><th>Kontakt</th><th>Kontaktuppgifter</th><th>Verksamhet</th><th>Telefoni</th><th>Missade samtal</th><th>Meddelande</th><th>Status</th><th>Källa</th>
         </tr></thead><tbody>
           {visible.map((application) => <tr key={application.id}>
             <td className="muted">{fmt(application.created_at)}</td>
@@ -105,7 +114,8 @@ export default async function ApplicationsPage({ searchParams }: { searchParams?
             <td>{valueOrDash(application.industry)}</td>
             <td>{valueOrDash(application.telephony)}</td>
             <td>{application.missed_calls_per_week ?? 0}/vecka</td>
-            <td><div style={{display:"grid",gap:4}}><span><strong>Formulär:</strong> {valueOrDash(application.status)}</span><span className="muted">Betalning: {paymentLabel[application.payment_status] || application.payment_status}</span><span className="muted">Anslutning: {provisioningLabel[application.provisioning_status] || application.provisioning_status}</span></div></td>
+            <td><div className="admin-preview">{application.message || "–"}</div></td>
+            <td><div style={{display:"grid",gap:4}}><span><strong>Formulär:</strong> {formStatusLabel[application.status] || valueOrDash(application.status)}</span><span className="muted">Betalning: {paymentLabel[application.payment_status] || application.payment_status}</span><span className="muted">Anslutning: {provisioningLabel[application.provisioning_status] || application.provisioning_status}</span></div></td>
             <td><div style={{display:"grid",gap:4}}><span>{application.utm_source || application.referrer || "Direkt/okänd"}</span>{application.utm_campaign && <span className="muted">{application.utm_campaign}</span>}{application.landing_path && <span className="muted">{application.landing_path}</span>}</div></td>
           </tr>)}
         </tbody></table></div>
@@ -120,6 +130,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams?
             <span>Bransch: {valueOrDash(application.industry)}</span>
             <span>Telefoni: {valueOrDash(application.telephony)}</span>
             <span>Missade samtal: {application.missed_calls_per_week ?? 0}/vecka</span>
+            <span>Status: {formStatusLabel[application.status] || valueOrDash(application.status)}</span>
             <span>Källa: {application.utm_source || application.referrer || "Direkt/okänd"}</span>
             {application.message && <span>Meddelande: {application.message}</span>}
           </div>
